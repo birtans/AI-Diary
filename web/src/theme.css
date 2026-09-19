@@ -1,0 +1,127 @@
+/*
+ * Central design tokens — the only file that should define theme colors.
+ * Light theme lives on bare :root. Dark theme is defined once (below) and
+ * applied either by system preference (prefers-color-scheme) or by an
+ * explicit data-theme="dark"/"light" override set via ThemeToggle.
+ */
+
+:root {
+  --bg: #f6f4ef;
+  --bg-gradient: radial-gradient(circle at 15% -10%, #eef2e9 0%, #f6f4ef 45%);
+  --surface: #ffffff;
+  --surface-hover: #f2f0e9;
+  --ink: #211f1a;
+  --muted: #82796a;
+  --muted-strong: #5d564a;
+  --border: #e7e2d6;
+  --border-strong: #d9d2c0;
+  --accent: #4f7057;
+  --accent-hover: #3e5a45;
+  --accent-soft: #e7f0e4;
+  --accent-ink: #ffffff;
+  --danger: #ab4638;
+  --danger-hover: #8f392d;
+  --danger-soft: #fbeae6;
+  --warn-bg: #fdf3e0;
+  --warn-border: #edd9a8;
+  --insert-bg: #e2efdd;
+  --delete-bg: #f7e1dc;
+  --modify-bg: #fdf0d8;
+  --editor-bg: #fffdf8;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --serif: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-full: 999px;
+
+  --shadow-xs: 0 1px 2px rgba(30, 27, 18, 0.05);
+  --shadow-sm: 0 2px 8px rgba(30, 27, 18, 0.06), 0 1px 2px rgba(30, 27, 18, 0.04);
+  --shadow-md: 0 10px 30px rgba(30, 27, 18, 0.10), 0 2px 8px rgba(30, 27, 18, 0.05);
+  --shadow-lg: 0 24px 60px rgba(30, 27, 18, 0.18);
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --fast: 120ms var(--ease);
+  --normal: 200ms var(--ease);
+
+  color-scheme: light;
+}
+
+/*
+ * Dark theme — "piano black": a strict monochrome (grayscale) chrome —
+ * background, surfaces, borders, and text are all shades of the same
+ * neutral black — with a single champagne-gold accent carrying every
+ * interactive/selected/primary state. Red (danger) and green (diff insert)
+ * are kept as the only exceptions, since they carry semantic meaning.
+ *
+ * Defined twice on purpose: once behind the system preference (so it
+ * applies automatically), once as an explicit override (so ThemeToggle can
+ * force it regardless of system preference). Keep both in sync.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #050505;
+    --bg-gradient: radial-gradient(circle at 15% -12%, #121212 0%, #050505 55%);
+    --surface: #101010;
+    --surface-hover: #1c1c1c;
+    --ink: #f1f0ec;
+    --muted: #928d84;
+    --muted-strong: #bcb7ad;
+    --border: rgba(255, 255, 255, 0.09);
+    --border-strong: rgba(255, 255, 255, 0.17);
+    --accent: #c9a86a;
+    --accent-hover: #ddbf87;
+    --accent-soft: rgba(201, 168, 106, 0.16);
+    --accent-ink: #17130a;
+    --danger: #e2988a;
+    --danger-hover: #eaad9f;
+    --danger-soft: rgba(226, 152, 138, 0.14);
+    --warn-bg: rgba(201, 168, 106, 0.12);
+    --warn-border: rgba(201, 168, 106, 0.35);
+    --insert-bg: rgba(143, 187, 143, 0.14);
+    --delete-bg: rgba(226, 152, 138, 0.14);
+    --modify-bg: rgba(201, 168, 106, 0.14);
+    --editor-bg: #030303;
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 12px 34px rgba(0, 0, 0, 0.6);
+    --shadow-lg: 0 26px 64px rgba(0, 0, 0, 0.7);
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #050505;
+  --bg-gradient: radial-gradient(circle at 15% -12%, #121212 0%, #050505 55%);
+  --surface: #101010;
+  --surface-hover: #1c1c1c;
+  --ink: #f1f0ec;
+  --muted: #928d84;
+  --muted-strong: #bcb7ad;
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.17);
+  --accent: #c9a86a;
+  --accent-hover: #ddbf87;
+  --accent-soft: rgba(201, 168, 106, 0.16);
+  --accent-ink: #17130a;
+  --danger: #e2988a;
+  --danger-hover: #eaad9f;
+  --danger-soft: rgba(226, 152, 138, 0.14);
+  --warn-bg: rgba(201, 168, 106, 0.12);
+  --warn-border: rgba(201, 168, 106, 0.35);
+  --insert-bg: rgba(143, 187, 143, 0.14);
+  --delete-bg: rgba(226, 152, 138, 0.14);
+  --modify-bg: rgba(201, 168, 106, 0.14);
+  --editor-bg: #030303;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 12px 34px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 26px 64px rgba(0, 0, 0, 0.7);
+
+  color-scheme: dark;
+}

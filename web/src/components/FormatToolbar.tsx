@@ -1,10 +1,7 @@
-import { useEffect, useState } from "react";
 import type { EditorTextareaHandle } from "./EditorTextarea";
 
 interface Props {
   editorRef: React.RefObject<EditorTextareaHandle | null>;
-  onPreview: () => void;
-  isPreview: boolean;
 }
 
 const tools = [
@@ -15,29 +12,8 @@ const tools = [
   { id: "quote", label: "❝", title: "Quote", prefix: "> " },
 ] as const;
 
-/**
- * A small format toolbar pinned above the on-screen keyboard via the
- * visualViewport API, so it stays reachable while typing on mobile.
- */
-export function FormatToolbar({ editorRef, onPreview, isPreview }: Props) {
-  const [keyboardOffset, setKeyboardOffset] = useState(0);
-
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    const update = () => {
-      const bottom = window.innerHeight - (viewport.offsetTop + viewport.height);
-      setKeyboardOffset(Math.max(0, Math.round(bottom)));
-    };
-    viewport.addEventListener("scroll", update);
-    viewport.addEventListener("resize", update);
-    update();
-    return () => {
-      viewport.removeEventListener("scroll", update);
-      viewport.removeEventListener("resize", update);
-    };
-  }, []);
-
+/** Formatting bar pinned above the note title/date/location. Only shown while editing. */
+export function FormatToolbar({ editorRef }: Props) {
   const apply = (tool: (typeof tools)[number]) => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -56,7 +32,7 @@ export function FormatToolbar({ editorRef, onPreview, isPreview }: Props) {
   };
 
   return (
-    <div className="format-toolbar" style={{ bottom: keyboardOffset }}>
+    <div className="format-toolbar">
       {tools.map((tool) => (
         <button
           key={tool.id}
@@ -69,13 +45,7 @@ export function FormatToolbar({ editorRef, onPreview, isPreview }: Props) {
           {tool.label}
         </button>
       ))}
-      <button
-        type="button"
-        className="tool-button"
-        title="Link"
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={link}
-      >
+      <button type="button" className="tool-button" title="Link" onMouseDown={(e) => e.preventDefault()} onClick={link}>
         🔗
       </button>
       <button
@@ -95,16 +65,6 @@ export function FormatToolbar({ editorRef, onPreview, isPreview }: Props) {
         onClick={() => editorRef.current?.redo()}
       >
         ↷
-      </button>
-      <span className="toolbar-spacer" />
-      <button
-        type="button"
-        className={`tool-button ${isPreview ? "active" : ""}`}
-        title={isPreview ? "Back to editing" : "Preview"}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={onPreview}
-      >
-        {isPreview ? "✏️" : "👁"}
       </button>
     </div>
   );

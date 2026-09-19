@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { api } from "./api/client";
 import type { RecoveryStatusResponse } from "./api/types";
@@ -11,6 +11,9 @@ import { SearchView } from "./views/SearchView";
 import { ChatView } from "./views/ChatView";
 import { SettingsView } from "./views/SettingsView";
 import { AdminView } from "./views/AdminView";
+import { ThemeToggle } from "./components/ThemeToggle";
+import { MobileDrawer } from "./components/MobileDrawer";
+import { useIsMobile } from "./lib/useIsMobile";
 
 export function App() {
   return (
@@ -25,12 +28,18 @@ function Root() {
   if (!initialized) {
     return (
       <div className="landing">
+        <ThemeToggle className="theme-toggle-floating" />
         <p className="muted">Loading…</p>
       </div>
     );
   }
   if (!authenticated) {
-    return <RequestAccessView />;
+    return (
+      <>
+        <ThemeToggle className="theme-toggle-floating" />
+        <RequestAccessView />
+      </>
+    );
   }
   return <AuthedApp />;
 }
@@ -41,6 +50,7 @@ function AuthedApp() {
   const [showRecovery, setShowRecovery] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isAdmin = keycloak.hasRealmRole("diary-admin");
+  const isMobile = useIsMobile();
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -58,12 +68,15 @@ function AuthedApp() {
 
   if (showRecovery) {
     return (
-      <RecoverySetupView
-        onDone={() => {
-          setStatus("ok");
-          setShowRecovery(false);
-        }}
-      />
+      <>
+        <ThemeToggle className="theme-toggle-floating" />
+        <RecoverySetupView
+          onDone={() => {
+            setStatus("ok");
+            setShowRecovery(false);
+          }}
+        />
+      </>
     );
   }
 
@@ -74,26 +87,32 @@ function AuthedApp() {
           ☰
         </button>
         <nav className="topnav">
-          <Link to="/" onClick={() => setDrawerOpen(false)}>
+          <NavLink to="/" end onClick={() => setDrawerOpen(false)}>
             Notes
-          </Link>
-          <Link to="/search" onClick={() => setDrawerOpen(false)}>
+          </NavLink>
+          <NavLink to="/search" onClick={() => setDrawerOpen(false)}>
             Search
-          </Link>
-          <Link to="/chat" onClick={() => setDrawerOpen(false)}>
+          </NavLink>
+          <NavLink to="/chat" onClick={() => setDrawerOpen(false)}>
             Chat
-          </Link>
-          <Link to="/settings" onClick={() => setDrawerOpen(false)}>
+          </NavLink>
+          <NavLink to="/settings" onClick={() => setDrawerOpen(false)}>
             Settings
-          </Link>
+          </NavLink>
           {isAdmin && (
-            <Link to="/admin" onClick={() => setDrawerOpen(false)}>
+            <NavLink to="/admin" onClick={() => setDrawerOpen(false)}>
               Admin
-            </Link>
+            </NavLink>
           )}
         </nav>
         <span className="topbar-user">
-          {userEmail && <span className="muted">{userEmail}</span>}
+          <ThemeToggle />
+          {userEmail && (
+            <>
+              <span className="user-avatar">{userEmail.slice(0, 2).toUpperCase()}</span>
+              <span className="muted">{userEmail}</span>
+            </>
+          )}
           <button type="button" className="link-button" onClick={() => void logout()}>
             Sign out
           </button>
@@ -110,6 +129,7 @@ function AuthedApp() {
       )}
 
       <div className="drawer-scrim" onClick={() => setDrawerOpen(false)} />
+      {isMobile && <MobileDrawer isAdmin={isAdmin} onNavigate={() => setDrawerOpen(false)} />}
       <Routes>
         <Route path="/" element={<NotesView />} />
         <Route path="/trash" element={<TrashView />} />

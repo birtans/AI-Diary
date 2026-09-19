@@ -1,22 +1,22 @@
-import matter from "gray-matter";
-
 /**
  * Split server-generated frontmatter from a decrypted note body.
- * On parse failure we fall back to the whole content — metadata is always
- * authoritative in Postgres, the frontmatter is a portability convenience.
+ * Mirrors NoteContent.Split on the server: a plain line-based scan for the
+ * closing "---" delimiter, not a YAML parse — metadata is always
+ * authoritative in Postgres, the frontmatter is a portability convenience,
+ * so it only needs to be located and removed, not understood. (A YAML
+ * library, e.g. gray-matter, doesn't run in the browser without a Buffer
+ * polyfill; this needs none.)
  */
 export function stripFrontmatter(content: string): string {
   if (!content.startsWith("---\n")) return content;
-  try {
-    const parsed = matter(content);
-    if (typeof parsed.content === "string") {
-      return unescapeFirstLine(parsed.content);
-    }
-    return content;
-  } catch (error) {
-    console.warn("Frontmatter parse failed; using raw content.", error);
-    return content;
+  const lines = content.split("\n");
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trimEnd() !== "---") continue;
+    const rest = lines.slice(i + 1);
+    if (rest[0] === "") rest.shift(); // the blank line separating frontmatter from body
+    return unescapeFirstLine(rest.join("\n"));
   }
+  return content;
 }
 
 /** Undo the server-side escape of a body that begins with a literal "---". */

@@ -3,9 +3,11 @@ import { useSearchParams } from "react-router-dom";
 import { Sidebar } from "../components/Sidebar";
 import { EditorPane } from "../components/EditorPane";
 import type { NoteDetail } from "../api/types";
+import { useIsMobile } from "../lib/useIsMobile";
 
 /** Left rail (notes grouped by entry date) + right editor pane. */
 export function NotesView() {
+  const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("note"));
 
@@ -29,17 +31,19 @@ export function NotesView() {
 
   return (
     <div className="main-layout">
-      <Sidebar
-        selectedId={selectedId}
-        onSelect={select}
-        onCreate={select}
-        onDeleted={(id) => {
-          if (id === selectedId) {
-            setSelectedId(null);
-            setSearchParams({}, { replace: true });
-          }
-        }}
-      />
+      {!isMobile && (
+        <Sidebar
+          selectedId={selectedId}
+          onSelect={select}
+          onCreate={select}
+          onDeleted={(id) => {
+            if (id === selectedId) {
+              setSelectedId(null);
+              setSearchParams({}, { replace: true });
+            }
+          }}
+        />
+      )}
       <EditorPane noteId={selectedId} onNoteChanged={onNoteChanged} />
     </div>
   );

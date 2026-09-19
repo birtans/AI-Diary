@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { NoteListItem } from "../api/types";
 import { api } from "../api/client";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface Props {
   selectedId: string | null;
@@ -28,6 +29,7 @@ function groupLabel(entryDate: string): string {
 export function Sidebar({ selectedId, onSelect, onCreate, onDeleted }: Props) {
   const [notes, setNotes] = useState<NoteListItem[]>([]);
   const [error, setError] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<NoteListItem | null>(null);
 
   const refresh = async () => {
     try {
@@ -70,7 +72,6 @@ export function Sidebar({ selectedId, onSelect, onCreate, onDeleted }: Props) {
   };
 
   const deleteNote = async (id: string) => {
-    if (!window.confirm("Move this note to the trash?")) return;
     try {
       await api.delete(`/api/notes/${id}`);
       setNotes((prev) => prev.filter((n) => n.id !== id));
@@ -102,7 +103,7 @@ export function Sidebar({ selectedId, onSelect, onCreate, onDeleted }: Props) {
                 onClick={() => onSelect(note.id)}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  void deleteNote(note.id);
+                  setPendingDelete(note);
                 }}
               >
                 <span className="note-item-title">{note.title || "Untitled"}</span>
@@ -118,6 +119,20 @@ export function Sidebar({ selectedId, onSelect, onCreate, onDeleted }: Props) {
           Trash
         </Link>
       </div>
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Move to trash?"
+          message={`"${pendingDelete.title || "Untitled"}" will be moved to the trash.`}
+          confirmLabel="Move to trash"
+          danger
+          onConfirm={() => {
+            const id = pendingDelete.id;
+            setPendingDelete(null);
+            void deleteNote(id);
+          }}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
     </nav>
   );
 }

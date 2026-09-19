@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "gray-matter": "^4.0.3",
     "jszip": "^3.10.1",
     "keycloak-js": "^26.1.4",
     "react": "^19.1.0",

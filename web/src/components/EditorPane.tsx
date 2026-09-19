@@ -10,15 +10,12 @@ import { getBuffer, putBuffer } from "../lib/indexeddb";
 import { markSaved } from "../lib/crashFlush";
 import { EditorTextarea, type EditorTextareaHandle } from "./EditorTextarea";
 import { FormatToolbar } from "./FormatToolbar";
-import { MetadataPanel } from "./MetadataPanel";
 import { HistoryModal } from "./HistoryModal";
 
 interface Props {
   noteId: string | null;
   onNoteChanged: (detail: NoteDetail | null) => void;
 }
-
-const PREVIEW_KEY = "ai-diary-preview-mode";
 
 /**
  * Right pane: plain textarea for writing, sanitised markdown preview.
@@ -32,11 +29,18 @@ export function EditorPane({ noteId, onNoteChanged }: Props) {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [isPreview, setIsPreview] = useState(() => sessionStorage.getItem(PREVIEW_KEY) === "1");
-  const [showMeta, setShowMeta] = useState(false);
+  const [isPreview, setIsPreview] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
   const [conflict, setConflict] = useState<{ message: string; currentVersion: number } | null>(null);
   const [mirrorOffer, setMirrorOffer] = useState<{ mirror: string; server: string } | null>(null);
+  const [metaError, setMetaError] = useState("");
+
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [editingDate, setEditingDate] = useState(false);
+  const [dateDraft, setDateDraft] = useState("");
+  const [editingLocation, setEditingLocation] = useState(false);
+  const [locationDraft, setLocationDraft] = useState("");
 
   const editorRef = useRef<EditorTextareaHandle>(null);
   const saveTimer = useRef<number | null>(null);
@@ -44,12 +48,7 @@ export function EditorPane({ noteId, onNoteChanged }: Props) {
   const bodyRef = useRef(body);
   bodyRef.current = body;
 
-  const togglePreview = () => {
-    setIsPreview((prev) => {
-      sessionStorage.setItem(PREVIEW_KEY, prev ? "0" : "1");
-      return !prev;
-    });
-  };
+  const togglePreview = () => setIsPreview((prev) => !prev);
 
   const load = useCallback(
     async (id: string) => {
@@ -57,6 +56,7 @@ export function EditorPane({ noteId, onNoteChanged }: Props) {
       setLoadError("");
       setConflict(null);
       setMirrorOffer(null);
+      setMetaError("");
       try {
         const fetched = await api.get<NoteDetail>(`/api/notes/${id}`);
         const envelope = await fetchPresigned(fetched.presignedUrl);
@@ -82,8 +82,10 @@ export function EditorPane({ noteId, onNoteChanged }: Props) {
   );
 
   useEffect(() => {
-    if (noteId) void load(noteId);
-    else {
+    if (noteId) {
+      setIsPreview(true);
+      void load(noteId);
+    } else {
       setDetail(null);
       setBody("");
       setLastSavedBody("");
@@ -141,6 +143,72 @@ export function EditorPane({ noteId, onNoteChanged }: Props) {
     [detail, lastSavedBody, onNoteChanged],
   );
 
+  const saveMeta = useCallback(
+    async (overrides: { title?: string; entryDate?: string; locationLabel?: string | null }) => {
+      if (!detail) return;
+      const title = overrides.title ?? detail.title;
+      const entryDate = overrides.entryDate ?? detail.entryDate;
+      const locationLabel = overrides.locationLabel !== undefined ? overrides.locationLabel : detail.location?.label ?? null;
+      const clearLocation = overrides.locationLabel !== undefined && !overrides.locationLabel;
+      try {
+        const updated = await api.patch<NoteDetail>(`/api/notes/${detail.id}/meta`, {
+          title,
+          entryDate,
+          clearLocation,
+          location:
+            !clearLocation && locationLabel
+              ? { lat: detail.location?.lat ?? 0, lon: detail.location?.lon ?? 0, label: locationLabel }
+              : null,
+        });
+        setMetaError("");
+        setDetail(updated);
+        onNoteChanged(updated);
+      } catch (ex) {
+        setMetaError(ex instanceof Error ? ex.message : "Could not save.");
+      }
+    },
+    [detail, onNoteChanged],
+  );
+
+  const startEditTitle = () => {
+    if (!detail) return;
+    setTitleDraft(detail.title);
+    setEditingTitle(true);
+  };
+
+  const commitTitle = () => {
+    setEditingTitle(false);
+    if (detail && titleDraft !== detail.title) void saveMeta({ title: titleDraft });
+  };
+
+  const startEditDate = () => {
+    if (!detail) return;
+    setDateDraft(detail.entryDate);
+    setEditingDate(true);
+  };
+
+  const commitDate = () => {
+    setEditingDate(false);
+    if (detail && dateDraft && dateDraft !== detail.entryDate) void saveMeta({ entryDate: dateDraft });
+  };
+
+  const startEditLocation = () => {
+    if (!detail) return;
+    setLocationDraft(detail.location?.label ?? "");
+    setEditingLocation(true);
+  };
+
+  const commitLocation = () => {
+    setEditingLocation(false);
+    const current = detail?.location?.label ?? "";
+    if (detail && locationDraft !== current) void saveMeta({ locationLabel: locationDraft || null });
+  };
+
+  const editableKeyDown = (event: React.KeyboardEvent<HTMLInputElement>, onCancel: () => void) => {
+    if (event.key === "Enter") event.currentTarget.blur();
+    else if (event.key === "Escape") onCancel();
+  };
+
   // Debounced autosave.
   useEffect(() => {
     if (!detail || !dirty) return;
@@ -183,21 +251,7 @@ export function EditorPane({ noteId, onNoteChanged }: Props) {
 
   return (
     <div className="editor-pane" onKeyDown={onKeyDown}>
-      <div className="editor-header">
-        <h2 className="note-title">{detail.title || "Untitled"}</h2>
-        <span className="entry-date">
-          {detail.entryDate}
-          {detail.location ? " · 📍" : ""}
-        </span>
-        <span className="header-spacer" />
-        {saving ? <span className="muted">Saving…</span> : dirty ? <span className="muted">Unsaved</span> : null}
-        <button type="button" className="icon-button" title="History" onClick={() => setShowHistory(true)}>
-          🕘
-        </button>
-        <button type="button" className="icon-button" title="Details" onClick={() => setShowMeta((v) => !v)}>
-          ⓘ
-        </button>
-      </div>
+      {!isPreview && <FormatToolbar editorRef={editorRef} />}
 
       {mirrorOffer && (
         <div className="notice-banner">
@@ -246,40 +300,86 @@ export function EditorPane({ noteId, onNoteChanged }: Props) {
         </div>
       )}
 
-      {showMeta && (
-        <MetadataPanel
-          detail={detail}
-          onSaved={(updated) => {
-            setDetail(updated);
-            onNoteChanged(updated);
-          }}
-          onClose={() => setShowMeta(false)}
-        />
-      )}
+      <div className="editor-scroll">
+        <div className="editor-header">
+          {editingTitle ? (
+            <input
+              className="note-title-input"
+              value={titleDraft}
+              autoFocus
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(e) => editableKeyDown(e, () => setEditingTitle(false))}
+            />
+          ) : (
+            <h2 className="note-title editable" title="Click to rename" onClick={startEditTitle}>
+              {detail.title || "Untitled"}
+            </h2>
+          )}
 
-      <div className="editor-body">
-        {isPreview ? (
-          <div className="preview markdown-body">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-              {body || "_Nothing written yet._"}
-            </ReactMarkdown>
-          </div>
-        ) : (
-          <EditorTextarea ref={editorRef} value={body} onChange={onBodyChange} onBlur={onBlur} />
-        )}
-      </div>
+          {editingDate ? (
+            <input
+              type="date"
+              className="entry-date-input"
+              value={dateDraft}
+              autoFocus
+              onChange={(e) => setDateDraft(e.target.value)}
+              onBlur={commitDate}
+              onKeyDown={(e) => editableKeyDown(e, () => setEditingDate(false))}
+            />
+          ) : (
+            <span className="entry-date editable" title="Click to change the date" onClick={startEditDate}>
+              {detail.entryDate}
+            </span>
+          )}
 
-      {!isPreview && (
-        <FormatToolbar editorRef={editorRef} onPreview={togglePreview} isPreview={false} />
-      )}
+          {editingLocation ? (
+            <input
+              className="location-input"
+              value={locationDraft}
+              autoFocus
+              placeholder="Add a place"
+              onChange={(e) => setLocationDraft(e.target.value)}
+              onBlur={commitLocation}
+              onKeyDown={(e) => editableKeyDown(e, () => setEditingLocation(false))}
+            />
+          ) : (
+            <span className="location-label editable" title="Click to set a location" onClick={startEditLocation}>
+              {detail.location?.label ? `📍 ${detail.location.label}` : "+ Location"}
+            </span>
+          )}
 
-      {isPreview && (
-        <div className="preview-bar">
-          <button type="button" className="secondary-button" onClick={togglePreview}>
-            Edit
-          </button>
+          <span className="header-spacer" />
+          {metaError && <span className="error-text small">{metaError}</span>}
+          {saving ? <span className="muted">Saving…</span> : dirty ? <span className="muted">Unsaved</span> : null}
+          {isPreview ? (
+            <button type="button" className="secondary-button" onClick={togglePreview}>
+              Edit
+            </button>
+          ) : (
+            <>
+              <button type="button" className="secondary-button" onClick={() => setShowHistory(true)}>
+                History
+              </button>
+              <button type="button" className="secondary-button" onClick={togglePreview}>
+                Preview Mode
+              </button>
+            </>
+          )}
         </div>
-      )}
+
+        <div className="editor-body">
+          {isPreview ? (
+            <div className="preview markdown-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+                {body || "_Nothing written yet._"}
+              </ReactMarkdown>
+            </div>
+          ) : (
+            <EditorTextarea ref={editorRef} value={body} onChange={onBodyChange} onBlur={onBlur} />
+          )}
+        </div>
+      </div>
 
       {showHistory && (
         <HistoryModal
