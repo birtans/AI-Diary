@@ -75,10 +75,21 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
     {
-        o.Authority = options.OidcAuthority;
-        o.RequireHttpsMetadata = !options.OidcAuthority.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
+        var authority = options.OidcAuthority.TrimEnd('/');
+        var realm = authority.Split('/').Last();
+        o.Authority = authority; // issuer validation uses what the browser sees
+        o.MetadataAddress = options.OidcInternalBase + "/realms/" + realm + "/.well-known/openid-configuration";
+        o.RequireHttpsMetadata =
+            authority.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
+            options.OidcInternalBase.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
         o.MapInboundClaims = false;
         o.TokenValidationParameters.ValidAudience = options.OidcAudience;
+        // The discovery document is fetched via the internal URL, so its
+        // "issuer" field is the internal address — but tokens carry the
+        // browser-facing issuer. Pin ValidIssuer explicitly so the mismatch
+        // doesn't fail validation (the internal issuer from metadata is
+        // still accepted too, since the handler appends it to ValidIssuers).
+        o.TokenValidationParameters.ValidIssuer = authority;
         o.TokenValidationParameters.NameClaimType = "preferred_username";
     });
 builder.Services.AddAuthorization(o =>

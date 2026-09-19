@@ -148,7 +148,23 @@ public sealed class NoteService(
         current.SupersededAt = DateTimeOffset.UtcNow;
         note.CurrentVersion = newVersion;
         note.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Two saves raced past the ExpectedVersion check above (e.g. the
+            // debounced autosave and an immediate blur-triggered save for the
+            // same edit) and the DB's own optimistic concurrency token caught
+            // it. Report the real current version as the same clean conflict
+            // the frontend already resolves, instead of a raw 500.
+            var actual = await db.Notes.AsNoTracking()
+                .Where(n => n.Id == note.Id)
+                .Select(n => n.CurrentVersion)
+                .FirstAsync(ct);
+            throw new VersionConflictException(actual);
+        }
         await jobs.EnqueueAsync(JobQueue.KindEmbedNote, new { note_id = note.Id }, ct: ct);
 
         return await GetAsync(userId, note.Id, ct);
@@ -336,7 +352,14 @@ public sealed class NoteService(
         var key = ObjectStorage.NoteObjectKey(userId, note.Id, versionNo);
         await storage.PutAsync(key, encrypted, ct);
 
-        note.Versions.Add(new NoteVersion
+        // Added to the DbSet explicitly, not via note.Versions.Add(...): when
+        // `note` is already tracked (every SaveAsync call — only CreateAsync
+        // has a brand-new note), EF's implicit change detection sees the
+        // client-assigned Guid key on a graph-discovered entity and marks it
+        // Modified instead of Added, issuing an UPDATE for a row that doesn't
+        // exist yet (0 rows affected -> DbUpdateConcurrencyException on every
+        // single edit). db.NoteVersions.Add(...) states the intent directly.
+        db.NoteVersions.Add(new NoteVersion
         {
             Id = Guid.CreateVersion7(),
             NoteId = note.Id,

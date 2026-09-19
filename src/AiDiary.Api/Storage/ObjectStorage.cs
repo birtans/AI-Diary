@@ -9,20 +9,32 @@ namespace AiDiary.Api.Storage;
 public sealed class ObjectStorage
 {
     private readonly IAmazonS3 _s3;
+    private readonly IAmazonS3 _presignS3;
     private readonly DiaryOptions _options;
 
     public ObjectStorage(DiaryOptions options)
     {
         _options = options;
-        var config = new AmazonS3Config
-        {
-            ServiceURL = options.S3Endpoint,
-            ForcePathStyle = options.S3ForcePathStyle,
-            AuthenticationRegion = options.S3Region,
-        };
         var credentials = new BasicAWSCredentials(options.S3AccessKey, options.S3SecretKey);
-        _s3 = new AmazonS3Client(credentials, config);
+        _s3 = new AmazonS3Client(credentials, BuildConfig(options, options.S3Endpoint));
+        // Presigning is a local signature computation (no network call), so a
+        // second client pointed at the public endpoint is enough to hand the
+        // browser a URL it can actually reach — see S3PublicEndpointOrDefault.
+        _presignS3 = options.S3PublicEndpointOrDefault == options.S3Endpoint
+            ? _s3
+            : new AmazonS3Client(credentials, BuildConfig(options, options.S3PublicEndpointOrDefault));
     }
+
+    private static AmazonS3Config BuildConfig(DiaryOptions options, string endpoint) => new()
+    {
+        ServiceURL = endpoint,
+        ForcePathStyle = options.S3ForcePathStyle,
+        AuthenticationRegion = options.S3Region,
+        // ServiceURL's own scheme isn't enough to drive presign URL protocol —
+        // set it explicitly from the endpoint we were actually given.
+        UseHttp = Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) &&
+            uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase),
+    };
 
     public string Bucket => _options.S3Bucket;
 
@@ -88,14 +100,23 @@ public sealed class ObjectStorage
     }
 
     /// <summary>Short-lived presigned GET URL; the browser fetches the ciphertext directly.</summary>
-    public string PresignGet(string key) =>
-        _s3.GetPreSignedURL(new GetPreSignedUrlRequest
+    public string PresignGet(string key)
+    {
+        var url = _presignS3.GetPreSignedURL(new GetPreSignedUrlRequest
         {
             BucketName = Bucket,
             Key = key,
             Expires = DateTime.UtcNow.AddSeconds(_options.S3PresignTtlSeconds),
             Verb = HttpVerb.GET,
         });
+        // The SDK's presigner defaults to https regardless of UseHttp on the
+        // client config. SigV4 signs the Host header, not the scheme, so
+        // rewriting it to match the intended endpoint doesn't break the
+        // signature — and is required for a plain-http endpoint like MinIO.
+        var wantsHttp = Uri.TryCreate(_options.S3PublicEndpointOrDefault, UriKind.Absolute, out var endpointUri) &&
+            endpointUri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase);
+        return wantsHttp ? url.Replace("https://", "http://", StringComparison.Ordinal) : url;
+    }
 
     public async Task<bool> IsReachableAsync(CancellationToken ct = default)
     {

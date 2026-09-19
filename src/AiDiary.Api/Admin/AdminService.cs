@@ -33,7 +33,7 @@ public sealed class AdminService(
             throw new ConflictException("This request was already decided.");
         }
 
-        var keycloakUserId = await keycloak.CreateUserAsync(request.Email, ct);
+        var keycloakUserId = await keycloak.CreateUserAsync(request.Email, ct: ct);
         try
         {
             await keycloak.AssignRealmRoleAsync(keycloakUserId, "diary-user", ct);

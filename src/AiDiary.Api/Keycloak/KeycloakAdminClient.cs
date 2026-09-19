@@ -19,9 +19,13 @@ public sealed class KeycloakAdminClient(HttpClient http, DiaryOptions options)
 
     private string Realm => options.OidcAuthority.TrimEnd('/').Split('/').Last();
 
-    private string AdminBase => options.OidcAuthority.TrimEnd('/') + "/admin/realms/" + Realm;
+    private string InternalBase => options.OidcInternalBase;
 
-    public async Task<string> CreateUserAsync(string email, CancellationToken ct = default)
+    private string AdminBase => InternalBase + "/admin/realms/" + Realm;
+
+    private string TokenUrl => InternalBase + "/realms/" + Realm + "/protocol/openid-connect/token";
+
+    public async Task<string> CreateUserAsync(string email, bool emailVerified = false, CancellationToken ct = default)
     {
         var token = await GetTokenAsync(ct);
         var request = new HttpRequestMessage(HttpMethod.Post, AdminBase + "/users")
@@ -31,7 +35,7 @@ public sealed class KeycloakAdminClient(HttpClient http, DiaryOptions options)
                 username = email,
                 email,
                 enabled = true,
-                emailVerified = false,
+                emailVerified,
             }),
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -47,6 +51,22 @@ public sealed class KeycloakAdminClient(HttpClient http, DiaryOptions options)
         var id = location.Split('/').LastOrDefault(s => !string.IsNullOrEmpty(s))
             ?? throw new ApiException("urn:ai-diary:error:keycloak", "Keycloak did not return a user id.", 502);
         return id;
+    }
+
+    public async Task<string?> GetUserIdAsync(string username, CancellationToken ct = default)
+    {
+        var token = await GetTokenAsync(ct);
+        var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            AdminBase + "/users?username=" + Uri.EscapeDataString(username));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+        var result = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+        return result.GetArrayLength() > 0 ? result[0].GetProperty("id").GetString() : null;
     }
 
     public async Task AssignRealmRoleAsync(string userId, string roleName, CancellationToken ct = default)
@@ -115,7 +135,7 @@ public sealed class KeycloakAdminClient(HttpClient http, DiaryOptions options)
             {
                 return _cachedToken;
             }
-            var tokenUrl = options.OidcAuthority.TrimEnd('/') + "/protocol/openid-connect/token";
+            var tokenUrl = TokenUrl;
             var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["grant_type"] = "client_credentials",

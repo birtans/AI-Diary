@@ -9,7 +9,7 @@ export function stripFrontmatter(content: string): string {
   if (!content.startsWith("---\n")) return content;
   try {
     const parsed = matter(content);
-    if (typeof parsed.content === "string" && parsed.content.length > 0) {
+    if (typeof parsed.content === "string") {
       return unescapeFirstLine(parsed.content);
     }
     return content;

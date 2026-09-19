@@ -56,6 +56,36 @@ public sealed class Seeder(
             logger.LogInformation("Generated keys for admin user.");
         }
 
+        // Point the application row at the real Keycloak user so an actual
+        // login resolves to this row (the OIDC subject is the join key).
+        try
+        {
+            // Dev seed: no SMTP here, so the email starts verified (the real
+            // approval flow verifies via the execute-actions email instead).
+            var keycloakId = await keycloak.CreateUserAsync(email, emailVerified: true, ct);
+            if (!string.IsNullOrEmpty(keycloakId))
+            {
+                user.KeycloakSub = keycloakId;
+                await db.SaveChangesAsync(ct);
+            }
+            logger.LogInformation("Created Keycloak user for admin email (password will be set via the console).");
+        }
+        catch (ApiException)
+        {
+            // Likely already exists (or transient): resolve by username.
+            var existing = await keycloak.GetUserIdAsync(email, ct);
+            if (!string.IsNullOrEmpty(existing))
+            {
+                user.KeycloakSub = existing;
+                await db.SaveChangesAsync(ct);
+                logger.LogInformation("Linked the admin row to the existing Keycloak user.");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Could not create the Keycloak user: {Message}. Create it manually.", ex.Message);
+        }
+
         if (!await db.Notes.AnyAsync(n => n.UserId == user.Id, ct))
         {
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -72,16 +102,6 @@ public sealed class Seeder(
                 null, today.AddDays(-3), "Europe/Amsterdam", null, "user",
                 "Reading list\n\nFinished the novel. Next up: something about the history of canals."), ct);
             logger.LogInformation("Created sample notes.");
-        }
-
-        try
-        {
-            await keycloak.CreateUserAsync(email, ct);
-            logger.LogInformation("Created Keycloak user for admin email (password will be set via the console).");
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning("Could not create the Keycloak user: {Message}. Create it manually.", ex.Message);
         }
     }
 }

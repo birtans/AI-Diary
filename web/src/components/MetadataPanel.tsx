@@ -12,9 +12,6 @@ interface Props {
 export function MetadataPanel({ detail, onSaved, onClose }: Props) {
   const [title, setTitle] = useState(detail.title);
   const [entryDate, setEntryDate] = useState(detail.entryDate);
-  const [timezone, setTimezone] = useState(detail.timezone);
-  const [lat, setLat] = useState(detail.location ? String(detail.location.lat) : "");
-  const [lon, setLon] = useState(detail.location ? String(detail.location.lon) : "");
   const [label, setLabel] = useState(detail.location?.label ?? "");
   const [clearLocation, setClearLocation] = useState(false);
   const [error, setError] = useState("");
@@ -27,11 +24,10 @@ export function MetadataPanel({ detail, onSaved, onClose }: Props) {
       const updated = await api.patch<NoteDetail>(`/api/notes/${detail.id}/meta`, {
         title,
         entryDate,
-        timezone,
         clearLocation,
         location:
-          !clearLocation && (lat || lon)
-            ? { lat: Number(lat) || 0, lon: Number(lon) || 0, label: label || null }
+          !clearLocation && label
+            ? { lat: detail.location?.lat ?? 0, lon: detail.location?.lon ?? 0, label }
             : null,
       });
       onSaved(updated);
@@ -60,22 +56,8 @@ export function MetadataPanel({ detail, onSaved, onClose }: Props) {
         <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
       </label>
       <label>
-        Timezone
-        <input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="Europe/Amsterdam" />
-      </label>
-      <div className="location-row">
-        <label>
-          Latitude
-          <input inputMode="decimal" value={lat} onChange={(e) => setLat(e.target.value)} />
-        </label>
-        <label>
-          Longitude
-          <input inputMode="decimal" value={lon} onChange={(e) => setLon(e.target.value)} />
-        </label>
-      </div>
-      <label>
-        Place label
-        <input value={label} onChange={(e) => setLabel(e.target.value)} />
+        Location
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Kyoto, Japan" />
       </label>
       <label className="checkbox-row">
         <input type="checkbox" checked={clearLocation} onChange={(e) => setClearLocation(e.target.checked)} />

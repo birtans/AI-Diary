@@ -157,12 +157,18 @@ export function EditorPane({ noteId, onNoteChanged }: Props) {
   };
 
   const onBlur = () => {
-    if (bodyRef.current !== lastSavedBody) void save();
+    if (bodyRef.current !== lastSavedBody) {
+      // Cancel the pending debounced save — otherwise it fires ~1.5s later
+      // with a stale expectedVersion and races this one into a conflict.
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+      void save();
+    }
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
       event.preventDefault();
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
       void save();
     }
   };
