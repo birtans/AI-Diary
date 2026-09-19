@@ -1,0 +1,65 @@
+{
+  "realm": "diary",
+  "displayName": "AI Diary",
+  "enabled": true,
+  "registrationAllowed": false,
+  "registrationEmailAsUsername": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "verifyEmail": true,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "sslRequired": "external",
+  "roles": {
+    "realm": [
+      { "name": "diary-user", "description": "Regular diary user" },
+      { "name": "diary-admin", "description": "Diary operator" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "diary-web",
+      "name": "AI Diary SPA",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://localhost:8081/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:8081"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+"
+      }
+    },
+    {
+      "clientId": "diary-api",
+      "name": "AI Diary Admin API",
+      "enabled": true,
+      "secret": "dev-admin-secret-change-me",
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "publicClient": false,
+      "description": "Confidential client used by the API for the Keycloak Admin API. Change the secret in production."
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-diary-api",
+      "enabled": true,
+      "serviceAccountClientId": "diary-api",
+      "clientRoles": {
+        "realm-management": ["manage-users", "view-users", "query-users", "view-realm"]
+      }
+    }
+  ]
+}

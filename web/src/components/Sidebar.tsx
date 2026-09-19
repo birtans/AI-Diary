@@ -1,0 +1,123 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import type { NoteListItem } from "../api/types";
+import { api } from "../api/client";
+
+interface Props {
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onCreate: (id: string) => void;
+  onDeleted: (id: string) => void;
+}
+
+interface Group {
+  label: string;
+  notes: NoteListItem[];
+}
+
+function groupLabel(entryDate: string): string {
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  if (entryDate === iso(today)) return "Today";
+  if (entryDate === iso(yesterday)) return "Yesterday";
+  return entryDate;
+}
+
+export function Sidebar({ selectedId, onSelect, onCreate, onDeleted }: Props) {
+  const [notes, setNotes] = useState<NoteListItem[]>([]);
+  const [error, setError] = useState("");
+
+  const refresh = async () => {
+    try {
+      setNotes(await api.get<NoteListItem[]>("/api/notes"));
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : "Could not load notes.");
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+    const onListChanged = () => void refresh();
+    window.addEventListener("ai-diary:notes-changed", onListChanged);
+    return () => window.removeEventListener("ai-diary:notes-changed", onListChanged);
+  }, []);
+
+  const groups = useMemo<Group[]>(() => {
+    const map = new Map<string, NoteListItem[]>();
+    for (const note of notes) {
+      const key = groupLabel(note.entryDate);
+      const list = map.get(key) ?? [];
+      list.push(note);
+      map.set(key, list);
+    }
+    return [...map.entries()].map(([label, list]) => ({ label, notes: list }));
+  }, [notes]);
+
+  const createNote = async () => {
+    try {
+      const detail = await api.post<{ id: string }>("/api/notes", {
+        body: "",
+        title: "",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      });
+      window.dispatchEvent(new CustomEvent("ai-diary:notes-changed"));
+      onCreate(detail.id);
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : "Could not create a note.");
+    }
+  };
+
+  const deleteNote = async (id: string) => {
+    if (!window.confirm("Move this note to the trash?")) return;
+    try {
+      await api.delete(`/api/notes/${id}`);
+      setNotes((prev) => prev.filter((n) => n.id !== id));
+      onDeleted(id);
+      window.dispatchEvent(new CustomEvent("ai-diary:notes-changed"));
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : "Could not delete the note.");
+    }
+  };
+
+  return (
+    <nav className="sidebar">
+      <div className="sidebar-header">
+        <span className="app-name">AI Diary</span>
+        <button type="button" className="icon-button" title="New note" onClick={() => void createNote()}>
+          ＋
+        </button>
+      </div>
+      {error && <p className="error-text">{error}</p>}
+      <div className="note-list">
+        {groups.map((group) => (
+          <section key={group.label}>
+            <h3 className="group-label">{group.label}</h3>
+            {group.notes.map((note) => (
+              <button
+                key={note.id}
+                type="button"
+                className={`note-item ${note.id === selectedId ? "selected" : ""}`}
+                onClick={() => onSelect(note.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  void deleteNote(note.id);
+                }}
+              >
+                <span className="note-item-title">{note.title || "Untitled"}</span>
+                {note.origin === "agent" && <span className="origin-tag">agent</span>}
+              </button>
+            ))}
+          </section>
+        ))}
+        {groups.length === 0 && <p className="muted">No notes yet.</p>}
+      </div>
+      <div className="sidebar-footer">
+        <Link className="link-button" to="/trash">
+          Trash
+        </Link>
+      </div>
+    </nav>
+  );
+}

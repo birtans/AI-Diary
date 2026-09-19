@@ -1,0 +1,18 @@
+# secrets / env
+.env
+*.pem
+
+# dotnet
+bin/
+obj/
+*.user
+.vs/
+
+# node
+node_modules/
+dist/
+*.local
+
+# misc
+.DS_Store
+*.log

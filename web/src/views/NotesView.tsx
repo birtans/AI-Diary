@@ -1,0 +1,46 @@
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Sidebar } from "../components/Sidebar";
+import { EditorPane } from "../components/EditorPane";
+import type { NoteDetail } from "../api/types";
+
+/** Left rail (notes grouped by entry date) + right editor pane. */
+export function NotesView() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("note"));
+
+  const select = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      setSearchParams({ note: id }, { replace: true });
+    },
+    [setSearchParams],
+  );
+
+  useEffect(() => {
+    const param = searchParams.get("note");
+    if (param && param !== selectedId) setSelectedId(param);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const onNoteChanged = useCallback((detail: NoteDetail | null) => {
+    window.dispatchEvent(new CustomEvent("ai-diary:notes-changed", { detail }));
+  }, []);
+
+  return (
+    <div className="main-layout">
+      <Sidebar
+        selectedId={selectedId}
+        onSelect={select}
+        onCreate={select}
+        onDeleted={(id) => {
+          if (id === selectedId) {
+            setSelectedId(null);
+            setSearchParams({}, { replace: true });
+          }
+        }}
+      />
+      <EditorPane noteId={selectedId} onNoteChanged={onNoteChanged} />
+    </div>
+  );
+}

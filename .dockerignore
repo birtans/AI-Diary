@@ -1,0 +1,6 @@
+.git
+.env
+**/bin
+**/obj
+web/node_modules
+web/dist
