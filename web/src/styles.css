@@ -1,5 +1,13 @@
 @import "./theme.css";
 
+@font-face {
+  font-family: "Caveat";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./assets/fonts/Caveat-Bold.woff2") format("woff2");
+}
+
 * {
   box-sizing: border-box;
 }
@@ -121,6 +129,15 @@ label > select {
   z-index: 30;
 }
 
+.topbar-logo {
+  font-family: "Caveat", var(--serif);
+  font-weight: 700;
+  font-size: 26px;
+  color: var(--accent);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
 .topnav {
   display: flex;
   gap: 2px;
@@ -168,10 +185,6 @@ label > select {
   font-weight: 700;
   letter-spacing: 0.02em;
   flex-shrink: 0;
-}
-
-.drawer-toggle {
-  display: none;
 }
 
 .mobile-drawer {
@@ -1093,7 +1106,8 @@ label > select {
 
 @media (max-width: 768px) {
   .topnav,
-  .topbar-user {
+  .topbar-user,
+  .topbar-logo {
     display: none;
   }
 
@@ -1107,10 +1121,6 @@ label > select {
   }
 
   .drawer-open .drawer-scrim {
-    display: block;
-  }
-
-  .drawer-toggle {
     display: block;
   }
 

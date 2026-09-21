@@ -49,7 +49,7 @@ export function MobileDrawer({ isAdmin, onNavigate }: Props) {
           onNavigate();
         }}
         onCreate={(id) => {
-          navigate(`/?note=${id}`);
+          navigate(`/?note=${id}&new=1`);
           onNavigate();
         }}
         onDeleted={(id) => {

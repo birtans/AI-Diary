@@ -83,9 +83,12 @@ function AuthedApp() {
   return (
     <div className={`app ${drawerOpen ? "drawer-open" : ""}`}>
       <header className="topbar">
-        <button type="button" className="icon-button drawer-toggle" onClick={() => setDrawerOpen((v) => !v)}>
-          ☰
-        </button>
+        {isMobile && (
+          <button type="button" className="icon-button drawer-toggle" onClick={() => setDrawerOpen((v) => !v)}>
+            ☰
+          </button>
+        )}
+        <span className="topbar-logo">AI Diary</span>
         <nav className="topnav">
           <NavLink to="/" end onClick={() => setDrawerOpen(false)}>
             Notes

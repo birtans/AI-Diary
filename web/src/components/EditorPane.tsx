@@ -14,6 +14,7 @@ import { HistoryModal } from "./HistoryModal";
 
 interface Props {
   noteId: string | null;
+  startInEditMode?: boolean;
   onNoteChanged: (detail: NoteDetail | null) => void;
 }
 
@@ -22,7 +23,7 @@ interface Props {
  * Debounced autosave (1.5 s idle, on blur, on Cmd/Ctrl-S), IndexedDB mirror,
  * and optimistic concurrency handling.
  */
-export function EditorPane({ noteId, onNoteChanged }: Props) {
+export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
   const [detail, setDetail] = useState<NoteDetail | null>(null);
   const [body, setBody] = useState("");
   const [lastSavedBody, setLastSavedBody] = useState("");
@@ -83,7 +84,7 @@ export function EditorPane({ noteId, onNoteChanged }: Props) {
 
   useEffect(() => {
     if (noteId) {
-      setIsPreview(true);
+      setIsPreview(!startInEditMode);
       void load(noteId);
     } else {
       setDetail(null);
@@ -91,6 +92,7 @@ export function EditorPane({ noteId, onNoteChanged }: Props) {
       setLastSavedBody("");
       setDirty(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteId, load]);
 
   // Mirror keystroke batches to IndexedDB (crash protection, not offline).
@@ -370,7 +372,7 @@ export function EditorPane({ noteId, onNoteChanged }: Props) {
 
         <div className="editor-body">
           {isPreview ? (
-            <div className="preview markdown-body">
+            <div className="preview markdown-body" onDoubleClick={() => setIsPreview(false)}>
               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
                 {body || "_Nothing written yet._"}
               </ReactMarkdown>

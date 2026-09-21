@@ -19,6 +19,14 @@ export function NotesView() {
     [setSearchParams],
   );
 
+  const selectNew = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      setSearchParams({ note: id, new: "1" }, { replace: true });
+    },
+    [setSearchParams],
+  );
+
   useEffect(() => {
     const param = searchParams.get("note");
     if (param && param !== selectedId) setSelectedId(param);
@@ -35,7 +43,7 @@ export function NotesView() {
         <Sidebar
           selectedId={selectedId}
           onSelect={select}
-          onCreate={select}
+          onCreate={selectNew}
           onDeleted={(id) => {
             if (id === selectedId) {
               setSelectedId(null);
@@ -44,7 +52,11 @@ export function NotesView() {
           }}
         />
       )}
-      <EditorPane noteId={selectedId} onNoteChanged={onNoteChanged} />
+      <EditorPane
+        noteId={selectedId}
+        startInEditMode={searchParams.get("new") === "1"}
+        onNoteChanged={onNoteChanged}
+      />
     </div>
   );
 }
