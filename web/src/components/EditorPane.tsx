@@ -378,7 +378,13 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
               </ReactMarkdown>
             </div>
           ) : (
-            <EditorTextarea ref={editorRef} value={body} onChange={onBodyChange} onBlur={onBlur} />
+            <EditorTextarea
+              ref={editorRef}
+              value={body}
+              onChange={onBodyChange}
+              onBlur={onBlur}
+              onDoubleClick={() => setIsPreview(true)}
+            />
           )}
         </div>
       </div>

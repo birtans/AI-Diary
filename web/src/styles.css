@@ -1,11 +1,11 @@
 @import "./theme.css";
 
 @font-face {
-  font-family: "Caveat";
+  font-family: "Dancing Script";
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url("./assets/fonts/Caveat-Bold.woff2") format("woff2");
+  src: url("./assets/fonts/DancingScript-Bold.woff2") format("woff2");
 }
 
 * {
@@ -130,9 +130,9 @@ label > select {
 }
 
 .topbar-logo {
-  font-family: "Caveat", var(--serif);
+  font-family: "Dancing Script", var(--serif);
   font-weight: 700;
-  font-size: 26px;
+  font-size: 28px;
   color: var(--accent);
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -231,25 +231,39 @@ label > select {
   overflow-y: auto;
 }
 
-.sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.app-name {
-  font-family: var(--serif);
-  font-weight: 600;
-  font-size: 18px;
-  letter-spacing: -0.01em;
-}
-
 .note-list {
   flex: 1;
   overflow-y: auto;
   padding: 8px 8px 12px;
+}
+
+.new-note-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: none;
+  padding: 10px 8px;
+  margin-bottom: 8px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.new-note-button:hover {
+  background: var(--surface-hover);
+}
+
+.new-note-icon {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .group-label {

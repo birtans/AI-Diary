@@ -72,6 +72,7 @@ services:
       KC_HOSTNAME_STRICT: "false"
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm.json:ro
+      - ./keycloak/themes/diary:/opt/keycloak/themes/diary:ro
     depends_on:
       postgres:
         condition: service_healthy

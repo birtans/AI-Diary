@@ -1,6 +1,7 @@
 {
   "realm": "diary",
-  "displayName": "AI Diary",
+  "displayName": "",
+  "loginTheme": "diary",
   "enabled": true,
   "registrationAllowed": false,
   "registrationEmailAsUsername": true,

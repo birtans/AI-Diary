@@ -84,14 +84,12 @@ export function Sidebar({ selectedId, onSelect, onCreate, onDeleted }: Props) {
 
   return (
     <nav className="sidebar">
-      <div className="sidebar-header">
-        <span className="app-name">AI Diary</span>
-        <button type="button" className="icon-button" title="New note" onClick={() => void createNote()}>
-          ＋
-        </button>
-      </div>
       {error && <p className="error-text">{error}</p>}
       <div className="note-list">
+        <button type="button" className="new-note-button" onClick={() => void createNote()}>
+          <span className="new-note-icon">＋</span>
+          New note
+        </button>
         {groups.map((group) => (
           <section key={group.label}>
             <h3 className="group-label">{group.label}</h3>
