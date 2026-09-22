@@ -3,7 +3,6 @@ using AiDiary.Api.Auth;
 using AiDiary.Api.Captcha;
 using AiDiary.Api.Chat;
 using AiDiary.Api.Configuration;
-using AiDiary.Api.Controllers;
 using AiDiary.Api.Crypto;
 using AiDiary.Api.Data;
 using AiDiary.Api.Embeddings;
@@ -21,11 +20,9 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Options;
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 
@@ -42,6 +39,7 @@ builder.Services.AddSingleton<RecoveryKeyCache>();
 builder.Services.AddSingleton<MailService>();
 builder.Services.AddSingleton<ICaptchaVerifier, CaptchaVerifier>();
 builder.Services.AddScoped<IAuthorizationHandler, AdminHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, DiaryUserHandler>();
 
 builder.Services.AddScoped<KeyHierarchyService>();
 builder.Services.AddScoped<CurrentUser>();
@@ -91,10 +89,38 @@ builder.Services
         // still accepted too, since the handler appends it to ValidIssuers).
         o.TokenValidationParameters.ValidIssuer = authority;
         o.TokenValidationParameters.NameClaimType = "preferred_username";
+        o.Events = new JwtBearerEvents
+        {
+            // Keycloak puts realm roles under a nested "realm_access.roles"
+            // claim rather than one claim per role — expand them into
+            // ClaimTypes.Role so IsInRole()/RequireRole() work normally.
+            OnTokenValidated = context =>
+            {
+                var realmAccess = context.Principal?.FindFirstValue("realm_access");
+                if (string.IsNullOrEmpty(realmAccess) || context.Principal?.Identity is not ClaimsIdentity identity)
+                {
+                    return Task.CompletedTask;
+                }
+                using var doc = JsonDocument.Parse(realmAccess);
+                if (doc.RootElement.TryGetProperty("roles", out var roles))
+                {
+                    foreach (var role in roles.EnumerateArray())
+                    {
+                        identity.AddClaim(new Claim(ClaimTypes.Role, role.GetString() ?? ""));
+                    }
+                }
+                return Task.CompletedTask;
+            },
+        };
     });
 builder.Services.AddAuthorization(o =>
 {
     o.AddPolicy("Admin", p => p.AddRequirements(new AdminRequirement()));
+    // Approved diary users only — closes the gap for a shared Keycloak realm
+    // where other apps' users can authenticate but shouldn't get a diary
+    // account. The seeded/bootstrapped admin has no Keycloak role to check,
+    // so DiaryUserHandler also accepts the DB admin flag.
+    o.AddPolicy("DiaryUser", p => p.AddRequirements(new DiaryUserRequirement()));
 });
 
 // --------------------------------------------------------- rate limiting

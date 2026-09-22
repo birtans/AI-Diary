@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace AiDiary.Api.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = "DiaryUser")]
 [Route("api/chat")]
 public sealed class ChatController(CurrentUser current, ChatService chat) : ControllerBase
 {

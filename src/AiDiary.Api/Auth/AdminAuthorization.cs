@@ -1,4 +1,3 @@
-using AiDiary.Api.Auth;
 using Microsoft.AspNetCore.Authorization;
 
 namespace AiDiary.Api.Auth;

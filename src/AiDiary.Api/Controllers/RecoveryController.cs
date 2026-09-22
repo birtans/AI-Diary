@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace AiDiary.Api.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = "DiaryUser")]
 [Route("api/recovery")]
 public sealed class RecoveryController(CurrentUser current, RecoveryService recovery) : ControllerBase
 {

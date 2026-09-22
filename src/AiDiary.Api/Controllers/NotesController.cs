@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace AiDiary.Api.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = "DiaryUser")]
 [Route("api/notes")]
 public sealed class NotesController(CurrentUser current, NoteService notes) : ControllerBase
 {

@@ -1,4 +1,3 @@
-using AiDiary.Api.Configuration;
 using AiDiary.Api.Contracts;
 using AiDiary.Api.Data;
 using AiDiary.Api.Keycloak;

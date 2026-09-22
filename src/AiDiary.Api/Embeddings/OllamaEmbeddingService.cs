@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using AiDiary.Api.Configuration;
 
 namespace AiDiary.Api.Embeddings;

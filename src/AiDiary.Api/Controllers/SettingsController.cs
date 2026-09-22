@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace AiDiary.Api.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = "DiaryUser")]
 [Route("api/settings")]
 public sealed class SettingsController(
     CurrentUser current,
