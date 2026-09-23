@@ -66,16 +66,16 @@ services:
       retries: 20
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.1
+    # Shared identity image (keycloak/Dockerfile) with the realm and theme
+    # baked in. Its default command is start --optimized --import-realm;
+    # --import-realm only seeds a realm on first boot, so it's safe on every
+    # deploy. KC_PROXY=edge: Coolify's Traefik terminates TLS and talks plain
+    # HTTP to the container.
+    image: ${REGISTRY:-registry.birtan.dev}/${KEYCLOAK_IMAGE_NAME:-identity}:${KEYCLOAK_IMAGE_TAG:-latest}
     restart: unless-stopped
-    # KC_PROXY=edge: Coolify's Traefik terminates TLS and talks plain HTTP to
-    # the container. --import-realm only seeds the realm on its first boot —
-    # safe to leave in on every deploy.
-    command: start --import-realm --db=postgres
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD is required}
-      KC_DB: postgres
       KC_DB_URL: ${KC_DB_URL:-jdbc:postgresql://postgres:5432/keycloak}
       KC_DB_USERNAME: ${KC_DB_USERNAME:-keycloak}
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD is required}
@@ -83,9 +83,6 @@ services:
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME is required — the public auth domain, e.g. auth.example.com}
       KC_HOSTNAME_STRICT: "true"
       KC_PROXY: edge
-    volumes:
-      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm.json:ro
-      - ./keycloak/themes/diary:/opt/keycloak/themes/diary:ro
     depends_on:
       postgres:
         condition: service_healthy

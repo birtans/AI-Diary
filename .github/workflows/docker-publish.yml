@@ -1,12 +1,19 @@
 name: Build and publish Docker images
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      build_keycloak:
+        description: 'Also build the shared Keycloak image (realm/theme changes)'
+        type: boolean
+        default: false
 
 env:
   REGISTRY: registry.birtan.dev
   WEB_IMAGE_NAME: ai-diary-web
   API_IMAGE_NAME: ai-diary-api
+  # Deliberately not ai-diary-*: this identity server is shared across projects.
+  KEYCLOAK_IMAGE_NAME: identity
   COOLIFY_URL: https://containers.birtan.dev
 
 jobs:
@@ -52,6 +59,21 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
+
+      # Keycloak's Dockerfile COPYs realm-export.json and themes/ relative
+      # to its own folder, so the build context is keycloak/, not the repo root.
+      - name: Build and push keycloak
+        if: ${{ inputs.build_keycloak }}
+        uses: docker/build-push-action@v6
+        with:
+          context: keycloak
+          file: keycloak/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.KEYCLOAK_IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.KEYCLOAK_IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha,scope=keycloak
+          cache-to: type=gha,mode=max,scope=keycloak
 
   trigger-redeploy:
     needs: build-and-push
