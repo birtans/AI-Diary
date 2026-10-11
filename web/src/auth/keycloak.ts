@@ -1,9 +1,9 @@
 import Keycloak from "keycloak-js";
 
 const keycloak = new Keycloak({
-  url: (import.meta.env.VITE_KEYCLOAK_URL as string | undefined) ?? "http://localhost:8082",
-  realm: (import.meta.env.VITE_KEYCLOAK_REALM as string | undefined) ?? "diary",
-  clientId: (import.meta.env.VITE_KEYCLOAK_CLIENT_ID as string | undefined) ?? "diary-web",
+  url: (import.meta.env.VITE_KEYCLOAK_URL as string | undefined) || "http://localhost:8082",
+  realm: (import.meta.env.VITE_KEYCLOAK_REALM as string | undefined) || "diary",
+  clientId: (import.meta.env.VITE_KEYCLOAK_CLIENT_ID as string | undefined) || "diary-web",
 });
 
 export default keycloak;

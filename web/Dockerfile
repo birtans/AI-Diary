@@ -4,6 +4,11 @@ WORKDIR /app
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ .
+# Baked into the bundle by Vite. Unset = the localhost dev defaults in
+# src/auth/keycloak.ts; production passes the public identity server.
+ARG VITE_KEYCLOAK_URL
+ARG VITE_KEYCLOAK_REALM
+ARG VITE_KEYCLOAK_CLIENT_ID
 RUN npm run build
 
 FROM nginx:1.27-alpine

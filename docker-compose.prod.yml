@@ -10,7 +10,11 @@
 # deployment-specific URL must be set in Coolify's environment variables for
 # this resource, or the stack will refuse to start.
 #
-# Assign public domains to web, api and keycloak from Coolify's per-service
+# Keycloak is not part of this stack: it's the shared identity server,
+# deployed from its own repository as a separate Coolify resource, and
+# reached over its public URL.
+#
+# Assign public domains to web and api from Coolify's per-service
 # settings — this file intentionally does not publish host ports.
 
 name: ai-diary
@@ -29,9 +33,12 @@ x-api-environment: &api-env
   DIARY_OLLAMA_URL: ${DIARY_OLLAMA_URL:?DIARY_OLLAMA_URL is required (wherever bge-m3 is served from)}
   DIARY_EMBED_MODEL: ${DIARY_EMBED_MODEL:-bge-m3}
   DIARY_OIDC_AUTHORITY: ${DIARY_OIDC_AUTHORITY:?DIARY_OIDC_AUTHORITY is required — the public Keycloak URL, e.g. https://auth.example.com/realms/diary}
-  DIARY_OIDC_INTERNAL_URL: http://keycloak:8080
+  # Empty = reach Keycloak via DIARY_OIDC_AUTHORITY (the public URL). Set it
+  # only if this stack shares a Docker network with the identity server,
+  # e.g. http://keycloak:8080.
+  DIARY_OIDC_INTERNAL_URL: ${DIARY_OIDC_INTERNAL_URL:-}
   DIARY_OIDC_CLIENT_ID: ${DIARY_OIDC_CLIENT_ID:-diary-api}
-  DIARY_OIDC_CLIENT_SECRET: ${DIARY_OIDC_CLIENT_SECRET:?DIARY_OIDC_CLIENT_SECRET is required — the diary-api client secret in Keycloak}
+  DIARY_OIDC_CLIENT_SECRET: ${DIARY_OIDC_CLIENT_SECRET:?DIARY_OIDC_CLIENT_SECRET is required — same value as DIARY_REALM_API_CLIENT_SECRET on the identity deployment}
   DIARY_OIDC_AUDIENCE: ${DIARY_OIDC_AUDIENCE:-diary-web}
   DIARY_ADMIN_EMAIL: ${DIARY_ADMIN_EMAIL:?DIARY_ADMIN_EMAIL is required}
   DIARY_CAPTCHA_PROVIDER: ${DIARY_CAPTCHA_PROVIDER:-none}
@@ -58,41 +65,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-diary}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-diary} -d ${POSTGRES_DB:-diary}"]
       interval: 5s
       timeout: 5s
       retries: 20
-
-  keycloak:
-    # Shared identity image (keycloak/Dockerfile) with the realm and theme
-    # baked in. Its default command is start --optimized --import-realm;
-    # --import-realm only seeds a realm on first boot, so it's safe on every
-    # deploy. KC_PROXY=edge: Coolify's Traefik terminates TLS and talks plain
-    # HTTP to the container.
-    image: ${REGISTRY:-registry.birtan.dev}/${KEYCLOAK_IMAGE_NAME:-identity}:${KEYCLOAK_IMAGE_TAG:-latest}
-    restart: unless-stopped
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD is required}
-      KC_DB_URL: ${KC_DB_URL:-jdbc:postgresql://postgres:5432/keycloak}
-      KC_DB_USERNAME: ${KC_DB_USERNAME:-keycloak}
-      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD is required}
-      KC_HTTP_ENABLED: "true"
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME is required — the public auth domain, e.g. auth.example.com}
-      KC_HOSTNAME_STRICT: "true"
-      KC_PROXY: edge
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'ok' >&3"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-    expose:
-      - "8080"
 
   api:
     image: ${REGISTRY:-registry.birtan.dev}/${API_IMAGE_NAME:-ai-diary-api}:${IMAGE_TAG:-latest}
@@ -101,8 +78,6 @@ services:
       <<: *api-env
     depends_on:
       postgres:
-        condition: service_healthy
-      keycloak:
         condition: service_healthy
     expose:
       - "8080"
