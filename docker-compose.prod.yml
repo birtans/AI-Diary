@@ -83,6 +83,9 @@ services:
 
   api:
     image: ${REGISTRY:-registry.birtan.dev}/${API_IMAGE_NAME:-ai-diary-api}:${IMAGE_TAG:-latest}
+    # Every publish reuses the `latest` tag, so without this a redeploy can
+    # keep running the cached image instead of the one just pushed.
+    pull_policy: always
     restart: unless-stopped
     environment:
       <<: *api-env
@@ -106,6 +109,7 @@ services:
 
   web:
     image: ${REGISTRY:-registry.birtan.dev}/${WEB_IMAGE_NAME:-ai-diary-web}:${IMAGE_TAG:-latest}
+    pull_policy: always
     restart: unless-stopped
     depends_on:
       api:
