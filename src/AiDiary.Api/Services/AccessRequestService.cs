@@ -41,7 +41,7 @@ public sealed class AccessRequestService(
         var limiter = EmailLimiters.GetOrAdd(emailKey, _ => new FixedWindowRateLimiter(
             new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 3,
+                PermitLimit = 20,
                 QueueLimit = 0,
                 Window = TimeSpan.FromHours(1),
                 AutoReplenishment = true,
