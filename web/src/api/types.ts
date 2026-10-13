@@ -81,6 +81,15 @@ export interface AccessRequestItem {
   requestedAt: string;
 }
 
+export interface AdminUserItem {
+  id: string;
+  email: string;
+  isAdmin: boolean;
+  noteCount: number;
+  createdAt: string;
+  isCurrentUser: boolean;
+}
+
 export interface RecoveryStatusResponse {
   status: "not_setup" | "setup_pending_ack" | "ok";
 }

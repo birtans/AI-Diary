@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using AiDiary.Api.Configuration;
@@ -113,12 +114,20 @@ public sealed class KeycloakAdminClient(HttpClient http, DiaryOptions options)
         }
     }
 
+    /// <summary>Also ends the user's sessions. A user that no longer exists counts as deleted.</summary>
     public async Task DeleteUserAsync(string userId, CancellationToken ct = default)
     {
         var token = await GetTokenAsync(ct);
         var request = new HttpRequestMessage(HttpMethod.Delete, AdminBase + $"/users/{userId}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        await http.SendAsync(request, ct);
+        var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
+        {
+            throw new ApiException(
+                "urn:ai-diary:error:keycloak",
+                $"Keycloak user deletion failed ({response.StatusCode}).",
+                StatusCodes.Status502BadGateway);
+        }
     }
 
     private async Task<string> GetTokenAsync(CancellationToken ct)

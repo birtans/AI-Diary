@@ -58,8 +58,10 @@ public sealed class ObjectStorage
         }
     }
 
+    public static string UserPrefix(Guid userId) => $"u/{userId}/";
+
     public static string NoteObjectKey(Guid userId, Guid noteId, int version) =>
-        $"u/{userId}/n/{noteId}/v{version}.md.enc";
+        $"{UserPrefix(userId)}n/{noteId}/v{version}.md.enc";
 
     public async Task PutAsync(string key, byte[] data, CancellationToken ct = default)
     {
@@ -96,6 +98,20 @@ public sealed class ObjectStorage
             BucketName = Bucket,
             Objects = batch,
         }, ct);
+    }
+
+    /// <summary>Deletes every object under a prefix, one listing page (at most 1000 keys) at a time.</summary>
+    public async Task DeletePrefixAsync(string prefix, CancellationToken ct = default)
+    {
+        var request = new ListObjectsV2Request { BucketName = Bucket, Prefix = prefix };
+        ListObjectsV2Response page;
+        do
+        {
+            page = await _s3.ListObjectsV2Async(request, ct);
+            await DeleteManyAsync(page.S3Objects.Select(o => o.Key), ct);
+            request.ContinuationToken = page.NextContinuationToken;
+        }
+        while (page.IsTruncated == true);
     }
 
     /// <summary>Short-lived presigned GET URL; the browser fetches the ciphertext directly.</summary>

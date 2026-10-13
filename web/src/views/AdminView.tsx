@@ -1,17 +1,27 @@
 import { useEffect, useState } from "react";
-import type { AccessRequestItem } from "../api/types";
+import type { AccessRequestItem, AdminUserItem } from "../api/types";
 import { api, ApiError } from "../api/client";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 
-/** Operator-only approval queue; visible when the account has the admin flag. */
+const noteCount = (n: number) => `${n} ${n === 1 ? "note" : "notes"}`;
+
+/** Operator-only approval queue and user list; visible when the account has the admin flag. */
 export function AdminView() {
   const [items, setItems] = useState<AccessRequestItem[]>([]);
+  const [users, setUsers] = useState<AdminUserItem[]>([]);
   const [error, setError] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<AdminUserItem | null>(null);
 
   const refresh = async () => {
     try {
-      setItems(await api.get<AccessRequestItem[]>("/api/admin/access-requests"));
+      const [requests, accounts] = await Promise.all([
+        api.get<AccessRequestItem[]>("/api/admin/access-requests"),
+        api.get<AdminUserItem[]>("/api/admin/users"),
+      ]);
+      setItems(requests);
+      setUsers(accounts);
     } catch (ex) {
-      setError(ex instanceof ApiError ? ex.detail : "Could not load access requests.");
+      setError(ex instanceof ApiError ? ex.detail : "Could not load the admin data.");
     }
   };
 
@@ -28,6 +38,15 @@ export function AdminView() {
       await refresh();
     } catch (ex) {
       setError(ex instanceof ApiError ? ex.detail : "Action failed.");
+    }
+  };
+
+  const deleteUser = async (id: string) => {
+    try {
+      await api.delete(`/api/admin/users/${id}`);
+      await refresh();
+    } catch (ex) {
+      setError(ex instanceof ApiError ? ex.detail : "Delete failed.");
     }
   };
 
@@ -59,6 +78,45 @@ export function AdminView() {
           </li>
         ))}
       </ul>
+
+      <h2>Users</h2>
+      {users.length === 0 && <p className="muted">No users yet.</p>}
+      <ul className="access-list">
+        {users.map((user) => (
+          <li key={user.id} className="access-item">
+            <div>
+              <strong>{user.email}</strong>
+              <p className="muted small">
+                {noteCount(user.noteCount)} · joined {new Date(user.createdAt).toLocaleDateString()}
+                {user.isAdmin && " · admin"}
+                {user.isCurrentUser && " · you"}
+              </p>
+            </div>
+            {!user.isCurrentUser && (
+              <div className="list-actions">
+                <button type="button" className="link-button danger" onClick={() => setPendingDelete(user)}>
+                  Delete
+                </button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete user?"
+          message={`${pendingDelete.email} loses access immediately, and their login, ${noteCount(pendingDelete.noteCount)} with their full history, chats and settings are deleted forever. This cannot be undone.`}
+          confirmLabel="Delete user"
+          danger
+          onConfirm={() => {
+            const id = pendingDelete.id;
+            setPendingDelete(null);
+            void deleteUser(id);
+          }}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
 }

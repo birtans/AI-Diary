@@ -513,6 +513,8 @@ All routes require a Keycloak bearer token except the public request form. The u
 | `GET` | `/api/admin/access-requests` | Admin only |
 | `POST` | `/api/admin/access-requests/{id}/approve` | Creates the Keycloak user, sends the email |
 | `POST` | `/api/admin/access-requests/{id}/reject` | |
+| `GET` | `/api/admin/users` | Admin only |
+| `DELETE` | `/api/admin/users/{id}` | Deletes the Keycloak user, stored objects, notes, chats, access requests and the app row. 409 for your own account |
 
 ### Conventions
 

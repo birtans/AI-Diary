@@ -96,6 +96,16 @@ public sealed record AccessRequestItem(
     string Status,
     DateTimeOffset RequestedAt);
 
+// ---------- Admin: users ----------
+
+public sealed record AdminUserItem(
+    Guid Id,
+    string Email,
+    bool IsAdmin,
+    int NoteCount,
+    DateTimeOffset CreatedAt,
+    bool IsCurrentUser);
+
 // ---------- Recovery ----------
 
 public sealed record RecoveryStatusResponse(string Status);

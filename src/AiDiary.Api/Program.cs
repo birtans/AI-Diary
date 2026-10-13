@@ -36,6 +36,7 @@ builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<MasterKeyProvider>();
 builder.Services.AddSingleton<ObjectStorage>();
 builder.Services.AddSingleton<RecoveryKeyCache>();
+builder.Services.AddSingleton<RevokedSubjects>();
 builder.Services.AddSingleton<MailService>();
 builder.Services.AddSingleton<ICaptchaVerifier, CaptchaVerifier>();
 builder.Services.AddScoped<IAuthorizationHandler, AdminHandler>();
@@ -91,11 +92,21 @@ builder.Services
         o.TokenValidationParameters.NameClaimType = "preferred_username";
         o.Events = new JwtBearerEvents
         {
-            // Keycloak puts realm roles under a nested "realm_access.roles"
-            // claim rather than one claim per role — expand them into
-            // ClaimTypes.Role so IsInRole()/RequireRole() work normally.
+            // Rejects tokens still in flight for accounts an admin deleted
+            // (see RevokedSubjects). Then: Keycloak puts realm roles under a
+            // nested "realm_access.roles" claim rather than one claim per
+            // role — expand them into ClaimTypes.Role so IsInRole()/
+            // RequireRole() work normally.
             OnTokenValidated = context =>
             {
+                var sub = context.Principal?.FindFirstValue("sub");
+                if (sub is not null &&
+                    context.HttpContext.RequestServices.GetRequiredService<RevokedSubjects>().Contains(sub))
+                {
+                    context.Fail("The account was deleted.");
+                    return Task.CompletedTask;
+                }
+
                 var realmAccess = context.Principal?.FindFirstValue("realm_access");
                 if (string.IsNullOrEmpty(realmAccess) || context.Principal?.Identity is not ClaimsIdentity identity)
                 {
