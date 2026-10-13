@@ -15,7 +15,16 @@ public sealed class OllamaEmbeddingService(HttpClient http, DiaryOptions options
         var request = new EmbedRequest(options.EmbedModel, [text], Truncate: true);
         var response = await http.PostAsJsonAsync(
             $"{options.OllamaUrl.TrimEnd('/')}/api/embed", request, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            // Ollama explains itself in the body, e.g. a 404 is almost always
+            // `model "bge-m3" not found, try pulling it first`.
+            var detail = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException(
+                $"Ollama /api/embed returned {(int)response.StatusCode} for model {options.EmbedModel}: {detail}",
+                null,
+                response.StatusCode);
+        }
 
         var result = await response.Content.ReadFromJsonAsync<EmbedResponse>(ct);
         var vector = result?.Embeddings?.FirstOrDefault()

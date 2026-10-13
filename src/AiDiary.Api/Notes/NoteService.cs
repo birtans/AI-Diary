@@ -6,6 +6,7 @@ using AiDiary.Api.Jobs;
 using AiDiary.Api.Services;
 using AiDiary.Api.Storage;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace AiDiary.Api.Notes;
 
@@ -121,15 +122,12 @@ public sealed class NoteService(
     {
         var user = await RequireUserAsync(userId, ct);
         var ukek = crypto.UnwrapUkekUnderMaster(user);
+        await using var tx = await LockNoteAsync(userId, noteId, ct);
         var note = await LoadNoteAsync(userId, noteId, ct);
 
         if (note.DeletedAt is not null)
         {
             throw new ConflictException("The note is in the trash. Restore it before saving.");
-        }
-        if (request.ExpectedVersion != note.CurrentVersion)
-        {
-            throw new VersionConflictException(note.CurrentVersion);
         }
 
         var body = NoteContent.Normalize(request.Body);
@@ -137,8 +135,14 @@ public sealed class NoteService(
         var current = note.Versions.First(v => v.VersionNo == note.CurrentVersion);
         if (hash.SequenceEqual(current.ContentHash))
         {
-            // No-op save: identical plaintext. Never churn a version.
+            // No-op save: identical plaintext. Never churn a version. Checked
+            // before ExpectedVersion so the loser of a debounced-autosave vs
+            // blur-save race for the same edit sees success, not a conflict.
             return await GetAsync(userId, note.Id, ct);
+        }
+        if (request.ExpectedVersion != note.CurrentVersion)
+        {
+            throw new VersionConflictException(note.CurrentVersion);
         }
 
         var dek = crypto.UnwrapDek(ukek, note.WrappedDek);
@@ -148,23 +152,8 @@ public sealed class NoteService(
         current.SupersededAt = DateTimeOffset.UtcNow;
         note.CurrentVersion = newVersion;
         note.UpdatedAt = DateTimeOffset.UtcNow;
-        try
-        {
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            // Two saves raced past the ExpectedVersion check above (e.g. the
-            // debounced autosave and an immediate blur-triggered save for the
-            // same edit) and the DB's own optimistic concurrency token caught
-            // it. Report the real current version as the same clean conflict
-            // the frontend already resolves, instead of a raw 500.
-            var actual = await db.Notes.AsNoTracking()
-                .Where(n => n.Id == note.Id)
-                .Select(n => n.CurrentVersion)
-                .FirstAsync(ct);
-            throw new VersionConflictException(actual);
-        }
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         await jobs.EnqueueAsync(JobQueue.KindEmbedNote, new { note_id = note.Id }, ct: ct);
 
         return await GetAsync(userId, note.Id, ct);
@@ -226,6 +215,7 @@ public sealed class NoteService(
     {
         var user = await RequireUserAsync(userId, ct);
         var ukek = crypto.UnwrapUkekUnderMaster(user);
+        await using var tx = await LockNoteAsync(userId, noteId, ct);
         var note = await LoadNoteAsync(userId, noteId, ct);
 
         if (note.DeletedAt is not null)
@@ -247,6 +237,7 @@ public sealed class NoteService(
         note.CurrentVersion = newVersion;
         note.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         await jobs.EnqueueAsync(JobQueue.KindEmbedNote, new { note_id = note.Id }, ct: ct);
 
         return await GetAsync(userId, note.Id, ct);
@@ -379,6 +370,19 @@ public sealed class NoteService(
             .FirstOrDefaultAsync(n => n.Id == noteId && n.UserId == userId, ct)
             ?? throw new NotFoundException("Note not found.");
         return note;
+    }
+
+    // Serialises version-creating writes per note. Without it two concurrent
+    // saves (e.g. debounced autosave + blur save) both pass the version check,
+    // both PUT the same v{N+1} object key — the loser overwriting the winner's
+    // ciphertext — and the loser then 500s on IX_note_versions_NoteId_VersionNo.
+    // Taken before LoadNoteAsync so the waiter reads the winner's committed state.
+    private async Task<IDbContextTransaction> LockNoteAsync(Guid userId, Guid noteId, CancellationToken ct)
+    {
+        var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlAsync(
+            $"""SELECT 1 FROM notes WHERE "Id" = {noteId} AND "UserId" = {userId} FOR UPDATE""", ct);
+        return tx;
     }
 
     private async Task<AppUser> RequireUserAsync(Guid userId, CancellationToken ct) =>
