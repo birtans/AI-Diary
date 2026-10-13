@@ -12,7 +12,7 @@ public interface ICaptchaVerifier
 /// Dispatches to Turnstile or hCaptcha based on DIARY_CAPTCHA_PROVIDER.
 /// "none" accepts everything (development and local testing).
 /// </summary>
-public sealed class CaptchaVerifier(HttpClient http, DiaryOptions options) : ICaptchaVerifier
+public sealed class CaptchaVerifier(HttpClient http, DiaryOptions options, ILogger<CaptchaVerifier> logger) : ICaptchaVerifier
 {
     public async Task<bool> VerifyAsync(string token, string? remoteIp, CancellationToken ct = default)
     {
@@ -35,12 +35,24 @@ public sealed class CaptchaVerifier(HttpClient http, DiaryOptions options) : ICa
             ["response"] = token,
             ["remoteip"] = remoteIp ?? "",
         });
-        var response = await http.PostAsync(verifyUrl, content, ct);
-        if (!response.IsSuccessStatusCode)
+        // Fail closed: an unreachable or misbehaving provider counts as a
+        // failed verification (400), not an unhandled 500.
+        try
         {
+            using var response = await http.PostAsync(verifyUrl, content, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("Captcha provider {Provider} returned {StatusCode}.", provider, (int)response.StatusCode);
+                return false;
+            }
+            var result = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+            return result.TryGetProperty("success", out var success) && success.ValueKind == JsonValueKind.True;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException
+                                   || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            logger.LogWarning(ex, "Captcha provider {Provider} could not be reached.", provider);
             return false;
         }
-        var result = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
-        return result.TryGetProperty("success", out var success) && success.GetBoolean();
     }
 }

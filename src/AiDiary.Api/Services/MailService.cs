@@ -20,17 +20,20 @@ public sealed class MailService(DiaryOptions options, ILogger<MailService> logge
             return;
         }
 
-        using var message = new MailMessage(options.SmtpFrom, to, subject, body);
-        using var client = new SmtpClient(options.SmtpHost, options.SmtpPort)
-        {
-            EnableSsl = options.SmtpPort != 25,
-        };
-        if (!string.IsNullOrWhiteSpace(options.SmtpUsername))
-        {
-            client.Credentials = new NetworkCredential(options.SmtpUsername, options.SmtpPassword);
-        }
+        // Construction is inside the try too: a malformed DIARY_SMTP_FROM or
+        // recipient throws FormatException here, and callers have usually
+        // already committed their work — a notification must never fail them.
         try
         {
+            using var message = new MailMessage(options.SmtpFrom, to, subject, body);
+            using var client = new SmtpClient(options.SmtpHost, options.SmtpPort)
+            {
+                EnableSsl = options.SmtpPort != 25,
+            };
+            if (!string.IsNullOrWhiteSpace(options.SmtpUsername))
+            {
+                client.Credentials = new NetworkCredential(options.SmtpUsername, options.SmtpPassword);
+            }
             await client.SendMailAsync(message, ct);
         }
         catch (Exception ex)
