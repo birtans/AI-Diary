@@ -94,14 +94,30 @@ services:
       - ollama
     expose:
       - "8080"
+    # Liveness, not /health/ready: readiness includes Ollama and object
+    # storage, and an outage there shouldn't mark the api unhealthy (Traefik
+    # stops routing to unhealthy containers). start_period covers migrations.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   web:
     image: ${REGISTRY:-registry.birtan.dev}/${WEB_IMAGE_NAME:-ai-diary-web}:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     expose:
       - "80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 networks:
   ollama:

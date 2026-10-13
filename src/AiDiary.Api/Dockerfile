@@ -11,6 +11,10 @@ COPY src/ .
 RUN dotnet publish AiDiary.Api/AiDiary.Api.csproj -c Release -o /app/publish --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
+# curl for the compose healthcheck; the runtime image ships without it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app/publish .
 EXPOSE 8080

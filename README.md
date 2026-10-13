@@ -130,6 +130,7 @@ The API creates the MinIO bucket and runs database migrations on startup.
 | ---- | --- |
 | Web app | http://localhost:8083 (`WEB_PORT`; proxies `/api` to the API) |
 | API health | http://localhost:8080/health/live, `/health/ready` |
+| Web health | http://localhost:8083/healthz |
 | Keycloak admin (identity stack) | http://localhost:8082 (admin / admin) |
 | Keycloak emails (identity stack) | http://localhost:8026 |
 | App emails (Mailpit) | http://localhost:8025 |
