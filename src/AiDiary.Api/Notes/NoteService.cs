@@ -358,6 +358,37 @@ public sealed class NoteService(
         }
     }
 
+    /// <summary>
+    /// Permanently deletes a trashed note: every version object in storage,
+    /// the version rows, the embedding, the note row, and chat citations of it.
+    /// Storage first, as in the reaper, so a crash leaves a row rather than a
+    /// dangling object.
+    /// </summary>
+    public async Task PurgeAsync(Guid userId, Guid noteId, CancellationToken ct = default)
+    {
+        await using var tx = await LockNoteAsync(userId, noteId, ct);
+        var note = await LoadNoteAsync(userId, noteId, ct);
+
+        if (note.DeletedAt is null)
+        {
+            throw new ConflictException("Only notes in the trash can be deleted permanently.");
+        }
+
+        await storage.DeleteManyAsync(note.Versions.Select(v => v.S3Key), ct);
+
+        await db.NoteEmbeddings.Where(e => e.NoteId == noteId).ExecuteDeleteAsync(ct);
+        await db.Database.ExecuteSqlAsync(
+            $"""
+            UPDATE messages m SET "CitedNoteIds" = array_remove(m."CitedNoteIds", {noteId})
+            FROM conversations c
+            WHERE m."ConversationId" = c."Id" AND c."UserId" = {userId} AND {noteId} = ANY(m."CitedNoteIds")
+            """, ct);
+        db.NoteVersions.RemoveRange(note.Versions);
+        db.Notes.Remove(note);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+    }
+
     // -------------------------------------------------------------- helpers
 
     private async Task<string> DecryptVersionAsync(byte[] dek, string s3Key, CancellationToken ct)

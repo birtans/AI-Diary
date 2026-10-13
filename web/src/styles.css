@@ -614,6 +614,14 @@ label > select {
   background: var(--accent-soft);
 }
 
+.link-button.danger {
+  color: var(--danger);
+}
+
+.link-button.danger:hover {
+  background: var(--danger-soft);
+}
+
 /* ------------------------------------------------------- notices */
 
 .notice-banner {

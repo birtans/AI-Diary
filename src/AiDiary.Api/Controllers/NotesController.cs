@@ -67,6 +67,15 @@ public sealed class NotesController(CurrentUser current, NoteService notes) : Co
         return Ok(await notes.GetAsync(user.Id, id, ct));
     }
 
+    /// <summary>Permanently deletes a trashed note, including its stored versions. 409 if not in the trash.</summary>
+    [HttpDelete("{id:guid}/permanent")]
+    public async Task<IActionResult> Purge(Guid id, CancellationToken ct)
+    {
+        var user = await current.RequireUserAsync(ct);
+        await notes.PurgeAsync(user.Id, id, ct);
+        return NoContent();
+    }
+
     [HttpGet("{id:guid}/versions")]
     public async Task<ActionResult<List<NoteVersionItem>>> Versions(Guid id, CancellationToken ct)
     {

@@ -2,11 +2,14 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { NoteListItem } from "../api/types";
 import { api } from "../api/client";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { clearBuffer } from "../lib/indexeddb";
 
 /** Soft-deleted notes; the reaper purges them 30 days after deletion. */
 export function TrashView() {
   const [items, setItems] = useState<NoteListItem[]>([]);
   const [error, setError] = useState("");
+  const [pendingPurge, setPendingPurge] = useState<NoteListItem | null>(null);
   const navigate = useNavigate();
 
   const refresh = async () => {
@@ -28,6 +31,17 @@ export function TrashView() {
       window.dispatchEvent(new CustomEvent("ai-diary:notes-changed"));
     } catch (ex) {
       setError(ex instanceof Error ? ex.message : "Restore failed.");
+    }
+  };
+
+  const purge = async (id: string) => {
+    try {
+      await api.delete(`/api/notes/${id}/permanent`);
+      await clearBuffer(id);
+      await refresh();
+      window.dispatchEvent(new CustomEvent("ai-diary:notes-changed"));
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : "Delete failed.");
     }
   };
 
@@ -56,6 +70,9 @@ export function TrashView() {
               >
                 Open
               </button>
+              <button type="button" className="link-button danger" onClick={() => setPendingPurge(item)}>
+                Delete permanently
+              </button>
             </span>
           </li>
         ))}
@@ -65,6 +82,20 @@ export function TrashView() {
           ← Back to notes
         </Link>
       </p>
+      {pendingPurge && (
+        <ConfirmDialog
+          title="Delete permanently?"
+          message={`"${pendingPurge.title || "Untitled"}" and its entire history will be deleted forever. This cannot be undone.`}
+          confirmLabel="Delete permanently"
+          danger
+          onConfirm={() => {
+            const id = pendingPurge.id;
+            setPendingPurge(null);
+            void purge(id);
+          }}
+          onCancel={() => setPendingPurge(null)}
+        />
+      )}
     </div>
   );
 }
