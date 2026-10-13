@@ -1120,9 +1120,12 @@ label > select {
 
 @media (max-width: 768px) {
   .topnav,
-  .topbar-user,
-  .topbar-logo {
+  .topbar-user {
     display: none;
+  }
+
+  .topbar-logo {
+    font-size: 24px;
   }
 
   .drawer-scrim {
