@@ -313,7 +313,7 @@ Create a **Docker Compose** resource from this repository with compose file
 | `DIARY_ADMIN_EMAIL` | your address (receives access-request notifications) |
 | `DIARY_CORS_ORIGINS` | the public web URL |
 | `DIARY_BASE_URL` | the public API URL |
-| `DIARY_SMTP_HOST`, `DIARY_SMTP_FROM` | SMTP server and sender. Also set `DIARY_SMTP_PORT`, `DIARY_SMTP_USERNAME`, `DIARY_SMTP_PASSWORD` as needed |
+| `DIARY_SMTP_HOST`, `DIARY_SMTP_FROM` | SMTP server and sender. Also set `DIARY_SMTP_PORT` (465 = TLS on connect, e.g. Resend; 587 = STARTTLS), `DIARY_SMTP_USERNAME`, `DIARY_SMTP_PASSWORD` as needed |
 
 Optional: `DIARY_CAPTCHA_*` for the public access-request form,
 `DIARY_OIDC_INTERNAL_URL` (leave empty to reach Keycloak via its public
