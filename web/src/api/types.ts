@@ -24,6 +24,7 @@ export interface NoteDetail {
   timezone: string;
   location?: NoteLocation | null;
   currentVersion: number;
+  revision: string; // opaque concurrency token, echoed back as expectedRevision
   origin: "user" | "agent";
   deletedAt?: string | null;
   presignedUrl: string;

@@ -136,6 +136,7 @@ label > select {
   color: var(--accent);
   letter-spacing: 0.01em;
   white-space: nowrap;
+  text-decoration: none;
 }
 
 .topnav {

@@ -53,6 +53,7 @@ public sealed class NoteVersion
     public string Filename { get; set; } = "";
     public int ByteSize { get; set; }
     public byte[] ContentHash { get; set; } = [];
+    /// <summary>When this row's content was last written (the working copy is overwritten in place).</summary>
     public DateTimeOffset CreatedAt { get; set; }
     /// <summary>Null means this is the current version. Starts the retention clock.</summary>
     public DateTimeOffset? SupersededAt { get; set; }

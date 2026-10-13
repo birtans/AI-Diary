@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { api } from "./api/client";
 import type { RecoveryStatusResponse } from "./api/types";
@@ -88,7 +88,9 @@ function AuthedApp() {
             ☰
           </button>
         )}
-        <span className="topbar-logo">AI Diary</span>
+        <Link to="/" className="topbar-logo" onClick={() => setDrawerOpen(false)}>
+          AI Diary
+        </Link>
         <nav className="topnav">
           <NavLink to="/" end onClick={() => setDrawerOpen(false)}>
             Notes

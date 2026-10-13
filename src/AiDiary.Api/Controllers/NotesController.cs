@@ -36,7 +36,7 @@ public sealed class NotesController(CurrentUser current, NoteService notes) : Co
         return Ok(await notes.GetAsync(user.Id, id, ct));
     }
 
-    /// <summary>Save a new version. 409 with the current version on mismatch; no-op on identical content.</summary>
+    /// <summary>Save into the working copy. 409 with the current revision on mismatch; no-op on identical content.</summary>
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<NoteDetail>> Save(Guid id, SaveNoteRequest request, CancellationToken ct)
     {
@@ -74,6 +74,14 @@ public sealed class NotesController(CurrentUser current, NoteService notes) : Co
         return Ok(await notes.ListVersionsAsync(user.Id, id, ct));
     }
 
+    /// <summary>"Save Version": keep the working copy as a version for the retention period.</summary>
+    [HttpPost("{id:guid}/versions")]
+    public async Task<ActionResult<NoteDetail>> SaveVersion(Guid id, CancellationToken ct)
+    {
+        var user = await current.RequireUserAsync(ct);
+        return Ok(await notes.SaveVersionAsync(user.Id, id, ct));
+    }
+
     [HttpGet("{id:guid}/versions/{a:int}/diff/{b:int}")]
     public async Task<ActionResult<DiffResponse>> Diff(Guid id, int a, int b, CancellationToken ct)
     {
@@ -81,7 +89,7 @@ public sealed class NotesController(CurrentUser current, NoteService notes) : Co
         return Ok(await notes.DiffAsync(user.Id, id, a, b, ct));
     }
 
-    /// <summary>History is append-only: restoring writes the old content as a new version.</summary>
+    /// <summary>Restores into the working copy; the text it replaces is kept in history.</summary>
     [HttpPost("{id:guid}/versions/{n:int}/restore")]
     public async Task<ActionResult<NoteDetail>> RestoreVersion(Guid id, int n, CancellationToken ct)
     {

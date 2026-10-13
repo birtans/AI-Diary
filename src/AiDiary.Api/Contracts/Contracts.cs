@@ -12,7 +12,7 @@ public sealed record CreateNoteRequest(
     string? Origin,
     string Body);
 
-public sealed record SaveNoteRequest(int ExpectedVersion, string Body);
+public sealed record SaveNoteRequest(string ExpectedRevision, string Body);
 
 public sealed record PatchNoteMetaRequest(
     string? Title,
@@ -38,6 +38,7 @@ public sealed record NoteDetail(
     string Timezone,
     NoteLocationResponse? Location,
     int CurrentVersion,
+    string Revision,
     string Origin,
     DateTimeOffset? DeletedAt,
     string PresignedUrl,

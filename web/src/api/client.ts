@@ -44,6 +44,7 @@ async function handleError(response: Response): Promise<never> {
       // ProblemDetails.Extensions serialise inline (JsonExtensionData).
       extensions = (top.extensions as Record<string, unknown>) ?? {};
       if (typeof top.currentVersion === "number") extensions.currentVersion = top.currentVersion;
+      if (typeof top.currentRevision === "string") extensions.currentRevision = top.currentRevision;
     }
   } catch {
     // not a JSON problem details body
@@ -79,9 +80,12 @@ export const api = {
   delete: <T>(path: string) => apiSend<T>("DELETE", path),
 };
 
-/** Raw fetch of a presigned URL — no auth header, cross-origin to B2/MinIO. */
+/**
+ * Raw fetch of a presigned URL — no auth header, cross-origin to B2/MinIO.
+ * no-store: the working copy is overwritten in place under the same key.
+ */
 export async function fetchPresigned(url: string): Promise<ArrayBuffer> {
-  const response = await fetch(url);
+  const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) {
     throw new ApiError(response.status, "Failed to fetch the encrypted note from object storage.");
   }

@@ -272,9 +272,16 @@ Both are purged 30 days after `last_message_at` by the same reaper that handles 
 
 ## Versioning and retention
 
-Saves never overwrite. Each save writes a new immutable object and a new `note_versions` row, then stamps `superseded_at` on the previous row and bumps `notes.current_version`.
+Each note has one working copy: the `note_versions` row numbered `notes.current_version`, with `superseded_at` null. Saves overwrite its object and row in place (`created_at` becomes the time the content was last written). Optimistic concurrency uses an opaque `revision` (the working copy's content hash), not the version number.
 
-A save whose plaintext SHA-256 matches `content_hash` of the current version is a no-op. Without this, autosave creates a version every time the editor blurs.
+A working copy is frozen, which stamps `superseded_at` and opens `current_version + 1` as the new working copy, in two cases:
+
+- **Save Version.** The user clicks the button in edit mode. Pending edits are saved first.
+- **First edit of a new day.** A save on a later calendar day (in the note's timezone) than the working copy was last written freezes the pre-change text, then writes the new text into the next version.
+
+A freeze is skipped when the newest retained version already holds the same content hash.
+
+A save whose plaintext SHA-256 matches `content_hash` of the working copy is a no-op.
 
 ### Retention rule
 
@@ -294,13 +301,15 @@ One nightly hosted service handles every retention task. Deletes are B2-first, t
 | Conversations | `last_message_at < now() - 30 days` |
 | Access request IPs | `requested_at < now() - 90 days`, IP nulled, row kept |
 
-B2 lifecycle rules cannot express the supersession rule, because each version has its own key and `daysFromHidingToDeleting` only fires when a newer file lands on the same key. Retention is therefore application-level by necessity, which is also the safer outcome. Keep any bucket lifecycle rule wide enough that it never fires in normal operation.
+B2 lifecycle rules cannot express the supersession rule, because each version has its own key and `daysFromHidingToDeleting` only fires when a newer file lands on the same key. Retention is therefore application-level by necessity, which is also the safer outcome.
+
+The working copy is the one key that is overwritten. On a bucket that keeps prior file versions (B2's default "keep all versions"), each autosave leaves a hidden copy behind. Use "keep only the last version" (`daysFromHidingToDeleting: 1`) so those copies are cleaned up. A frozen version's key is never written again, so this rule never touches retained history.
 
 ### History UI
 
 A version list per note showing timestamp, byte size and origin. Selecting two versions fetches both, decrypts them in API memory, runs a line diff and returns rendered HTML. Plaintext is never written to disk or logged during this.
 
-Restore writes a new version whose content equals the old one. History is append-only and is never rewritten.
+Restore puts the old content into the working copy. The text it replaces is frozen as a version first, unless the newest retained version already holds it.
 
 ## Embeddings and search
 
@@ -486,13 +495,14 @@ All routes require a Keycloak bearer token except the public request form. The u
 | `GET` | `/api/notes` | Sidebar list: id, title, entry date, current version. Paginated |
 | `POST` | `/api/notes` | Create. Returns the note with version 1 |
 | `GET` | `/api/notes/{id}` | Metadata plus a presigned GET URL and the unwrapped DEK |
-| `PUT` | `/api/notes/{id}` | Save a new version. No-op if the content hash matches |
+| `PUT` | `/api/notes/{id}` | Save into the working copy (`expectedRevision` + body). No-op if the content hash matches |
 | `PATCH` | `/api/notes/{id}/meta` | Title, entry date, location |
 | `DELETE` | `/api/notes/{id}` | Soft delete |
 | `POST` | `/api/notes/{id}/restore` | Undo a soft delete |
 | `GET` | `/api/notes/{id}/versions` | Version list |
+| `POST` | `/api/notes/{id}/versions` | Save Version: freeze the working copy for the retention period |
 | `GET` | `/api/notes/{id}/versions/{a}/diff/{b}` | Rendered diff |
-| `POST` | `/api/notes/{id}/versions/{n}/restore` | Write old content as a new version |
+| `POST` | `/api/notes/{id}/versions/{n}/restore` | Put old content into the working copy, keeping the replaced text in history |
 | `POST` | `/api/search` | Semantic search. Body carries query text and optional date bounds |
 | `POST` | `/api/chat` | Relay to the user's endpoint, streaming |
 | `GET` | `/api/chat/conversations` | List, most recent first |

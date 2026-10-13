@@ -11,7 +11,8 @@ interface Props {
 
 /**
  * Version history: pick two versions for a rendered diff, or restore one.
- * History is append-only — restoring writes the old content as a new version.
+ * Versions come from "Save Version" and from the first edit of each new day;
+ * restoring replaces the current text, which is itself kept in history.
  */
 export function HistoryModal({ noteId, currentVersion, onRestored, onClose }: Props) {
   const [versions, setVersions] = useState<NoteVersionItem[]>([]);
@@ -56,7 +57,7 @@ export function HistoryModal({ noteId, currentVersion, onRestored, onClose }: Pr
   }, [noteId, a, b]);
 
   const restore = async (versionNo: number) => {
-    if (!window.confirm(`Restore version ${versionNo}? This writes it as a new version.`)) return;
+    if (!window.confirm(`Restore version ${versionNo}? Your current text is kept in history.`)) return;
     try {
       await api.post(`/api/notes/${noteId}/versions/${versionNo}/restore`);
       onRestored();

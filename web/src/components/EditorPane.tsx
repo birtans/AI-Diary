@@ -32,7 +32,9 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
   const [loadError, setLoadError] = useState("");
   const [isPreview, setIsPreview] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
-  const [conflict, setConflict] = useState<{ message: string; currentVersion: number } | null>(null);
+  const [conflict, setConflict] = useState<{ message: string; currentRevision: string } | null>(null);
+  const [savingVersion, setSavingVersion] = useState(false);
+  const [versionNotice, setVersionNotice] = useState("");
   const [mirrorOffer, setMirrorOffer] = useState<{ mirror: string; server: string } | null>(null);
   const [metaError, setMetaError] = useState("");
 
@@ -107,18 +109,19 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
     };
   }, [body, detail, lastSavedBody]);
 
+  /** Resolves true when the server holds `text` afterwards. */
   const save = useCallback(
-    async (opts: { expectedVersion?: number; body?: string; silent?: boolean } = {}) => {
-      if (!detail) return;
+    async (opts: { expectedRevision?: string; body?: string; silent?: boolean } = {}): Promise<boolean> => {
+      if (!detail) return false;
       const text = opts.body ?? bodyRef.current;
       if (text === lastSavedBody) {
         setDirty(false);
-        return;
+        return true;
       }
       setSaving(true);
       try {
         const updated = await api.put<NoteDetail>(`/api/notes/${detail.id}`, {
-          expectedVersion: opts.expectedVersion ?? detail.currentVersion,
+          expectedRevision: opts.expectedRevision ?? detail.revision,
           body: text,
         });
         setDetail(updated);
@@ -128,22 +131,48 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
         setConflict(null);
         markSaved(updated.id);
         onNoteChanged(updated);
+        return true;
       } catch (ex) {
-        if (ex instanceof ApiError && ex.status === 409) {
-          const current = Number(ex.extensions.currentVersion ?? detail.currentVersion + 1);
+        if (ex instanceof ApiError && ex.status === 409 && typeof ex.extensions.currentRevision === "string") {
           setConflict({
             message: "This note changed elsewhere. Choose what to keep.",
-            currentVersion: current,
+            currentRevision: ex.extensions.currentRevision,
           });
         } else if (!opts.silent) {
           setLoadError(ex instanceof Error ? ex.message : "Save failed.");
         }
+        return false;
       } finally {
         setSaving(false);
       }
     },
     [detail, lastSavedBody, onNoteChanged],
   );
+
+  // Flushes pending edits first so the kept version is exactly what is on screen.
+  const saveVersion = useCallback(async () => {
+    if (!detail) return;
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    setSavingVersion(true);
+    setVersionNotice("");
+    try {
+      if (!(await save())) return;
+      const updated = await api.post<NoteDetail>(`/api/notes/${detail.id}/versions`);
+      setDetail(updated);
+      onNoteChanged(updated);
+      setVersionNotice("Version saved");
+    } catch (ex) {
+      setMetaError(ex instanceof Error ? ex.message : "Could not save the version.");
+    } finally {
+      setSavingVersion(false);
+    }
+  }, [detail, save, onNoteChanged]);
+
+  useEffect(() => {
+    if (!versionNotice) return;
+    const timer = window.setTimeout(() => setVersionNotice(""), 2500);
+    return () => window.clearTimeout(timer);
+  }, [versionNotice]);
 
   const saveMeta = useCallback(
     async (overrides: { title?: string; entryDate?: string; locationLabel?: string | null }) => {
@@ -229,7 +258,7 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
   const onBlur = () => {
     if (bodyRef.current !== lastSavedBody) {
       // Cancel the pending debounced save — otherwise it fires ~1.5s later
-      // with a stale expectedVersion and races this one into a conflict.
+      // with a stale expectedRevision and races this one into a conflict.
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
       void save();
     }
@@ -294,7 +323,7 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
             <button
               type="button"
               className="secondary-button"
-              onClick={() => void save({ expectedVersion: conflict.currentVersion })}
+              onClick={() => void save({ expectedRevision: conflict.currentRevision })}
             >
               Overwrite with mine
             </button>
@@ -353,7 +382,13 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
 
           <span className="header-spacer" />
           {metaError && <span className="error-text small">{metaError}</span>}
-          {saving ? <span className="muted">Saving…</span> : dirty ? <span className="muted">Unsaved</span> : null}
+          {saving ? (
+            <span className="muted">Saving…</span>
+          ) : dirty ? (
+            <span className="muted">Unsaved</span>
+          ) : versionNotice ? (
+            <span className="muted">{versionNotice}</span>
+          ) : null}
           {isPreview ? (
             <button type="button" className="secondary-button" onClick={togglePreview}>
               Edit
@@ -362,6 +397,15 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
             <>
               <button type="button" className="secondary-button" onClick={() => setShowHistory(true)}>
                 History
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={savingVersion}
+                onClick={() => void saveVersion()}
+                title="Keep the current text as a version for the retention period"
+              >
+                Save Version
               </button>
               <button type="button" className="secondary-button" onClick={togglePreview}>
                 Preview Mode

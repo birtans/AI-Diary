@@ -245,6 +245,7 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
     if (ex is VersionConflictException conflict)
     {
         problem.Extensions["currentVersion"] = conflict.CurrentVersion;
+        problem.Extensions["currentRevision"] = conflict.CurrentRevision;
     }
     context.Response.StatusCode = status;
     context.Response.ContentType = "application/problem+json";
