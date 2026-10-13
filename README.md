@@ -306,7 +306,7 @@ Create a **Docker Compose** resource from this repository with compose file
 | `DIARY_S3_ENDPOINT`, `DIARY_S3_PUBLIC_ENDPOINT` | the bucket endpoint, e.g. `https://s3.eu-central-003.backblazeb2.com` (both the same for B2) |
 | `DIARY_S3_REGION`, `DIARY_S3_BUCKET` | the bucket's region and name |
 | `DIARY_S3_ACCESS_KEY`, `DIARY_S3_SECRET_KEY` | the bucket's application key |
-| `OLLAMA_NETWORK` | the Ollama stack's network, e.g. `<uuid>_ai-net` (see *Local networking note*) |
+| `OLLAMA_NETWORK` | the Ollama stack's network, e.g. `<uuid>_ai-net` (see *Local networking note*). Defaults to `ai-net`, which only matches if that stack names its network explicitly |
 | `DIARY_OIDC_AUTHORITY` | `https://auth.example.com/realms/diary` |
 | `DIARY_OIDC_CLIENT_SECRET` | same value as `DIARY_REALM_API_CLIENT_SECRET` on the identity server |
 | `DIARY_ADMIN_EMAIL` | your address (receives access-request notifications) |

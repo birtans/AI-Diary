@@ -105,8 +105,10 @@ services:
 
 networks:
   ollama:
+    # The Ollama stack's network as `docker network ls` shows it; under
+    # Coolify that is usually prefixed with its resource UUID (<uuid>_ai-net).
     external: true
-    name: ${OLLAMA_NETWORK:?OLLAMA_NETWORK is required — the Ollama stack's network as docker network ls shows it, e.g. <coolify-uuid>_ai-net}
+    name: ${OLLAMA_NETWORK:-ai-net}
 
 volumes:
   postgres-data:
