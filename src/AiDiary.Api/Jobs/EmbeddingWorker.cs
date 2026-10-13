@@ -96,7 +96,7 @@ public sealed class EmbeddingWorker(
                     job.RunAt = DateTimeOffset.UtcNow.AddMinutes(Math.Pow(2, job.Attempts));
                     job.LastError = Truncate(ex.Message);
                 }
-                logger.LogWarning("Embedding job {Kind} {JobId} attempt {Attempts} failed.", job.Kind, job.Id, job.Attempts);
+                logger.LogWarning(ex, "Embedding job {Kind} {JobId} attempt {Attempts} failed.", job.Kind, job.Id, job.Attempts);
             }
             await db.SaveChangesAsync(ct);
         }

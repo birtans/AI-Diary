@@ -253,9 +253,17 @@ workflow.
 ### Local networking note
 
 The API must reach Ollama, which in production lives in a different Coolify
-stack with no published ports. Attach the API container to that stack's
-network (or a shared external network). Do not publish an Ollama port to
-solve this.
+stack with no published ports, on that stack's private `ai-net` network.
+`docker-compose.prod.yml` attaches the `api` service to it as an external
+network named by `OLLAMA_NETWORK`, and reaches Ollama by its `ollama` alias.
+Compose prefixes network names with the project (in Coolify, the resource
+UUID), so look up the real name on the server:
+
+```sh
+docker network ls --filter name=ai-net
+```
+
+Do not publish an Ollama port to solve this.
 
 ## Production deployment
 
@@ -298,7 +306,7 @@ Create a **Docker Compose** resource from this repository with compose file
 | `DIARY_S3_ENDPOINT`, `DIARY_S3_PUBLIC_ENDPOINT` | the bucket endpoint, e.g. `https://s3.eu-central-003.backblazeb2.com` (both the same for B2) |
 | `DIARY_S3_REGION`, `DIARY_S3_BUCKET` | the bucket's region and name |
 | `DIARY_S3_ACCESS_KEY`, `DIARY_S3_SECRET_KEY` | the bucket's application key |
-| `DIARY_OLLAMA_URL` | e.g. `http://ollama:11434` on a shared network |
+| `OLLAMA_NETWORK` | the Ollama stack's network, e.g. `<uuid>_ai-net` (see *Local networking note*) |
 | `DIARY_OIDC_AUTHORITY` | `https://auth.example.com/realms/diary` |
 | `DIARY_OIDC_CLIENT_SECRET` | same value as `DIARY_REALM_API_CLIENT_SECRET` on the identity server |
 | `DIARY_ADMIN_EMAIL` | your address (receives access-request notifications) |
@@ -308,7 +316,8 @@ Create a **Docker Compose** resource from this repository with compose file
 
 Optional: `DIARY_CAPTCHA_*` for the public access-request form,
 `DIARY_OIDC_INTERNAL_URL` (leave empty to reach Keycloak via its public
-URL), and the retention variables.
+URL), `DIARY_OLLAMA_URL` (defaults to `http://ollama:11434`), and the
+retention variables.
 
 Copy the resource's UUID from Coolify for the next step.
 
