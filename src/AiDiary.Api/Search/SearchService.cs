@@ -42,13 +42,14 @@ public sealed class SearchService(
         var lim = new NpgsqlParameter("lim", NpgsqlDbType.Integer) { Value = limit };
 
         var sql = """
-            SELECT ne.note_id AS "NoteId", 1 - (ne.embedding <=> @q::vector) AS "Score"
+            SELECT ne."NoteId" AS "NoteId", 1 - (ne."Embedding" <=> @q::vector) AS "Score"
             FROM note_embeddings ne
-            JOIN notes n ON n.id = ne.note_id AND n.deleted_at IS NULL
-            WHERE ne.user_id = @uid
-              AND (@from IS NULL OR n.entry_date >= @from)
-              AND (@to IS NULL OR n.entry_date <= @to)
-            ORDER BY ne.embedding <=> @q::vector
+            JOIN notes n ON n."Id" = ne."NoteId" AND n."DeletedAt" IS NULL
+            WHERE ne."UserId" = @uid
+              AND ne."Embedding" IS NOT NULL
+              AND (@from IS NULL OR n."EntryDate" >= @from)
+              AND (@to IS NULL OR n."EntryDate" <= @to)
+            ORDER BY ne."Embedding" <=> @q::vector
             LIMIT @lim
             """;
 
