@@ -12,6 +12,7 @@ obj/
 node_modules/
 dist/
 *.local
+*.tsbuildinfo
 
 # misc
 .DS_Store
