@@ -50,6 +50,12 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
   const mirrorTimer = useRef<number | null>(null);
   const bodyRef = useRef(body);
   bodyRef.current = body;
+  // Refs so a save queued behind another sees the revision/body the previous one produced.
+  const detailRef = useRef(detail);
+  detailRef.current = detail;
+  const lastSavedRef = useRef(lastSavedBody);
+  lastSavedRef.current = lastSavedBody;
+  const inFlightSave = useRef<Promise<boolean> | null>(null);
 
   const togglePreview = () => setIsPreview((prev) => !prev);
 
@@ -109,25 +115,37 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
     };
   }, [body, detail, lastSavedBody]);
 
-  /** Resolves true when the server holds `text` afterwards. */
+  /**
+   * Resolves true when the server holds `text` afterwards. Saves never overlap:
+   * a call made while one is in flight waits for it, then saves whatever is
+   * still unsaved. The editor text is never replaced, so typing during a save
+   * is kept and stays dirty.
+   */
   const save = useCallback(
     async (opts: { expectedRevision?: string; body?: string; silent?: boolean } = {}): Promise<boolean> => {
-      if (!detail) return false;
+      while (inFlightSave.current) await inFlightSave.current;
+      const current = detailRef.current;
+      if (!current) return false;
       const text = opts.body ?? bodyRef.current;
-      if (text === lastSavedBody) {
-        setDirty(false);
+      if (text === lastSavedRef.current) {
+        setDirty(bodyRef.current !== text);
         return true;
       }
       setSaving(true);
+      const request = api.put<NoteDetail>(`/api/notes/${current.id}`, {
+        expectedRevision: opts.expectedRevision ?? current.revision,
+        body: text,
+      });
+      inFlightSave.current = request.then(() => true, () => false);
       try {
-        const updated = await api.put<NoteDetail>(`/api/notes/${detail.id}`, {
-          expectedRevision: opts.expectedRevision ?? detail.revision,
-          body: text,
-        });
+        const updated = await request;
+        // The user may have switched notes while this was in flight.
+        if (detailRef.current?.id !== updated.id) return true;
+        detailRef.current = updated;
+        lastSavedRef.current = text;
         setDetail(updated);
         setLastSavedBody(text);
-        setBody(text);
-        setDirty(false);
+        setDirty(bodyRef.current !== text);
         setConflict(null);
         markSaved(updated.id);
         onNoteChanged(updated);
@@ -143,10 +161,11 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
         }
         return false;
       } finally {
+        inFlightSave.current = null;
         setSaving(false);
       }
     },
-    [detail, lastSavedBody, onNoteChanged],
+    [onNoteChanged],
   );
 
   // Flushes pending edits first so the kept version is exactly what is on screen.
@@ -240,11 +259,14 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
     else if (event.key === "Escape") onCancel();
   };
 
-  // Debounced autosave.
+  // Debounced autosave. While a save is in flight the timer does nothing; when
+  // it lands, `detail` changes and this re-arms if edits are still pending.
   useEffect(() => {
     if (!detail || !dirty) return;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => void save(), 1500);
+    saveTimer.current = window.setTimeout(() => {
+      if (!inFlightSave.current) void save();
+    }, 1500);
     return () => {
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
     };
