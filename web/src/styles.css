@@ -258,8 +258,13 @@ label > select {
   z-index: 1;
 }
 
-.new-note-button:hover {
+.new-note-button:hover:not(:disabled) {
   background: var(--surface-hover);
+}
+
+.new-note-button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .new-note-icon {

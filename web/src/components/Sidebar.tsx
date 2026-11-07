@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { NoteListItem } from "../api/types";
 import { api } from "../api/client";
@@ -30,6 +30,9 @@ export function Sidebar({ selectedId, onSelect, onCreate, onDeleted }: Props) {
   const [notes, setNotes] = useState<NoteListItem[]>([]);
   const [error, setError] = useState("");
   const [pendingDelete, setPendingDelete] = useState<NoteListItem | null>(null);
+  const [creating, setCreating] = useState(false);
+  // Ref guard blocks rapid repeat clicks that land before the disabled state re-renders.
+  const creatingRef = useRef(false);
 
   const refresh = async () => {
     try {
@@ -58,6 +61,9 @@ export function Sidebar({ selectedId, onSelect, onCreate, onDeleted }: Props) {
   }, [notes]);
 
   const createNote = async () => {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    setCreating(true);
     try {
       const detail = await api.post<{ id: string }>("/api/notes", {
         body: "",
@@ -68,6 +74,9 @@ export function Sidebar({ selectedId, onSelect, onCreate, onDeleted }: Props) {
       onCreate(detail.id);
     } catch (ex) {
       setError(ex instanceof Error ? ex.message : "Could not create a note.");
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
     }
   };
 
@@ -86,9 +95,15 @@ export function Sidebar({ selectedId, onSelect, onCreate, onDeleted }: Props) {
     <nav className="sidebar">
       {error && <p className="error-text">{error}</p>}
       <div className="note-list">
-        <button type="button" className="new-note-button" onClick={() => void createNote()}>
+        <button
+          type="button"
+          className="new-note-button"
+          onClick={() => void createNote()}
+          disabled={creating}
+          aria-busy={creating}
+        >
           <span className="new-note-icon">＋</span>
-          New note
+          {creating ? "Creating…" : "New note"}
         </button>
         {groups.map((group) => (
           <section key={group.label}>
