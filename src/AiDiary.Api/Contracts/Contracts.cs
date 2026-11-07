@@ -27,7 +27,8 @@ public sealed record NoteListItem(
     DateOnly EntryDate,
     int CurrentVersion,
     DateTimeOffset? DeletedAt,
-    string Origin);
+    string Origin,
+    bool NeedsIndex);
 
 public sealed record NoteDetail(
     Guid Id,
@@ -42,7 +43,8 @@ public sealed record NoteDetail(
     string Origin,
     DateTimeOffset? DeletedAt,
     string PresignedUrl,
-    string Dek);
+    string Dek,
+    bool NeedsIndex);
 
 public sealed record NoteLocationResponse(double Lat, double Lon, string? Label);
 

@@ -49,6 +49,34 @@ export function Sidebar({ selectedId, onSelect, onCreate, onDeleted }: Props) {
     return () => window.removeEventListener("ai-diary:notes-changed", onListChanged);
   }, []);
 
+  // Indexing runs in the background a few seconds after Save & Index; poll
+  // until the note's dot can go, so it clears without a reload.
+  useEffect(() => {
+    let timer: number | undefined;
+    const onIndexRequested = (event: Event) => {
+      const noteId = (event as CustomEvent<string>).detail;
+      window.clearTimeout(timer);
+      let attempts = 0;
+      const poll = async () => {
+        attempts += 1;
+        try {
+          const list = await api.get<NoteListItem[]>("/api/notes");
+          setNotes(list);
+          if (!list.find((n) => n.id === noteId)?.needsIndex) return;
+        } catch {
+          // Keep the current list; the next change event refreshes it.
+        }
+        if (attempts < 20) timer = window.setTimeout(() => void poll(), 3000);
+      };
+      timer = window.setTimeout(() => void poll(), 3000);
+    };
+    window.addEventListener("ai-diary:index-requested", onIndexRequested);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("ai-diary:index-requested", onIndexRequested);
+    };
+  }, []);
+
   const groups = useMemo<Group[]>(() => {
     const map = new Map<string, NoteListItem[]>();
     for (const note of notes) {
@@ -119,7 +147,17 @@ export function Sidebar({ selectedId, onSelect, onCreate, onDeleted }: Props) {
                   setPendingDelete(note);
                 }}
               >
-                <span className="note-item-title">{note.title || "Untitled"}</span>
+                <span className="note-item-title">
+                  <span className="note-item-name">{note.title || "Untitled"}</span>
+                  {note.needsIndex && (
+                    <span
+                      className="index-dot"
+                      role="img"
+                      aria-label="Not indexed for search yet"
+                      title="Not indexed for search yet. Save & Index, or wait for the nightly run."
+                    />
+                  )}
+                </span>
                 {note.origin === "agent" && <span className="origin-tag">agent</span>}
               </button>
             ))}

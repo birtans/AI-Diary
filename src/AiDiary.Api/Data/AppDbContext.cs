@@ -49,6 +49,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 .HasFilter("\"DeletedAt\" IS NULL");
             e.HasIndex(n => new { n.UserId, n.DeletedAt });
             e.HasOne(n => n.User).WithMany(u => u.Notes).HasForeignKey(n => n.UserId);
+            e.Ignore(n => n.NeedsIndex);
         });
 
         modelBuilder.Entity<NoteVersion>(e =>
@@ -62,10 +63,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<NoteEmbedding>(e =>
         {
             e.ToTable("note_embeddings");
-            e.HasKey(x => x.NoteId);
+            e.HasKey(x => new { x.NoteId, x.ChunkIndex });
+            e.Property(x => x.EntryDate).HasColumnType("date");
             e.Property(x => x.Embedding).HasColumnType("vector(1024)");
             e.HasIndex(x => x.UserId);
-            e.HasOne(x => x.Note).WithOne(n => n.Embedding).HasForeignKey<NoteEmbedding>(x => x.NoteId);
+            e.HasOne(x => x.Note).WithMany(n => n.Embeddings).HasForeignKey(x => x.NoteId);
         });
 
         modelBuilder.Entity<Conversation>(e =>

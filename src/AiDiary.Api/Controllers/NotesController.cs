@@ -83,7 +83,7 @@ public sealed class NotesController(CurrentUser current, NoteService notes) : Co
         return Ok(await notes.ListVersionsAsync(user.Id, id, ct));
     }
 
-    /// <summary>"Save Version": keep the working copy as a version for the retention period.</summary>
+    /// <summary>"Save &amp; Index": keep the working copy as a version for the retention period and queue indexing.</summary>
     [HttpPost("{id:guid}/versions")]
     public async Task<ActionResult<NoteDetail>> SaveVersion(Guid id, CancellationToken ct)
     {

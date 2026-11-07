@@ -11,7 +11,7 @@ interface Props {
 
 /**
  * Version history: pick two versions for a rendered diff, or restore one.
- * Versions come from "Save Version" and from the first edit of each new day;
+ * Versions come from "Save & Index", the nightly run, and the first edit of each new day;
  * restoring replaces the current text, which is itself kept in history.
  */
 export function HistoryModal({ noteId, currentVersion, onRestored, onClose }: Props) {

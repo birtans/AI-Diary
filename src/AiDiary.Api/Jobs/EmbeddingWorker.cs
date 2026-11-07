@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using AiDiary.Api.Configuration;
 using AiDiary.Api.Crypto;
 using AiDiary.Api.Data;
 using AiDiary.Api.Embeddings;
@@ -18,8 +19,6 @@ public sealed class EmbeddingWorker(
     IServiceScopeFactory scopeFactory,
     ILogger<EmbeddingWorker> logger) : BackgroundService
 {
-    private const int MaxInputChars = 32_000; // ~8000 tokens, bge-m3 has 8192-token context
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
@@ -47,6 +46,7 @@ public sealed class EmbeddingWorker(
         var storage = scope.ServiceProvider.GetRequiredService<ObjectStorage>();
         var crypto = scope.ServiceProvider.GetRequiredService<KeyHierarchyService>();
         var embeddings = scope.ServiceProvider.GetRequiredService<OllamaEmbeddingService>();
+        var options = scope.ServiceProvider.GetRequiredService<DiaryOptions>();
 
         // Recover jobs orphaned by a previous crash.
         await db.BackgroundJobs
@@ -72,7 +72,7 @@ public sealed class EmbeddingWorker(
         {
             try
             {
-                await ExecuteAsync(job, db, storage, crypto, embeddings, ct);
+                await ExecuteAsync(job, db, storage, crypto, embeddings, options, ct);
                 job.Status = "done";
                 job.LastError = null;
             }
@@ -108,6 +108,7 @@ public sealed class EmbeddingWorker(
         ObjectStorage storage,
         KeyHierarchyService crypto,
         OllamaEmbeddingService embeddings,
+        DiaryOptions options,
         CancellationToken ct)
     {
         if (job.Kind != JobQueue.KindEmbedNote)
@@ -120,12 +121,15 @@ public sealed class EmbeddingWorker(
         using var payload = JsonDocument.Parse(job.Payload);
         var noteId = payload.RootElement.GetProperty("note_id").GetGuid();
 
-        var note = await db.Notes.Include(n => n.Versions)
+        var note = await db.Notes.AsNoTracking().Include(n => n.Versions)
             .FirstOrDefaultAsync(n => n.Id == noteId, ct);
         if (note is null || note.DeletedAt is not null)
         {
             return; // purged or trashed; nothing to embed
         }
+        // Read before the body: if the note changes while we embed, the
+        // vectors are marked as reflecting this older state and stay stale.
+        var contentAt = note.ContentChangedAt;
 
         var user = await db.Users.AsNoTracking().FirstAsync(u => u.Id == note.UserId, ct);
         var ukek = crypto.UnwrapUkekUnderMaster(user);
@@ -137,24 +141,52 @@ public sealed class EmbeddingWorker(
         var (_, body) = NoteContent.Split(Encoding.UTF8.GetString(plaintext));
         var title = crypto.DecryptText(ukek, note.TitleEnc);
 
-        var input = (title + "\n\n" + body).Trim();
-        if (input.Length > MaxInputChars)
+        // Every part carries the title so it keeps its note's context. An
+        // empty body yields no parts: its old vectors are removed below.
+        var chunks = NoteChunker.Split(body);
+        var vectors = new List<float[]>(chunks.Count);
+        foreach (var chunk in chunks)
         {
-            input = input[..MaxInputChars];
+            vectors.Add(await embeddings.EmbedAsync((title + "\n\n" + chunk.Text).Trim(), ct));
         }
 
-        var vector = await embeddings.EmbedAsync(input, ct);
-
-        var row = await db.NoteEmbeddings.FirstOrDefaultAsync(e => e.NoteId == note.Id, ct);
-        if (row is null)
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // Same row lock NoteService takes, so a concurrent trash waits for us or we see it.
+        await db.Database.ExecuteSqlAsync(
+            $"""SELECT 1 FROM notes WHERE "Id" = {note.Id} FOR UPDATE""", ct);
+        if (!await db.Notes.AnyAsync(n => n.Id == note.Id && n.DeletedAt == null, ct))
         {
-            row = new NoteEmbedding { NoteId = note.Id, UserId = note.UserId };
-            db.NoteEmbeddings.Add(row);
+            return; // trashed or purged while embedding
         }
-        row.Embedding = new Vector(vector);
-        row.Model = "bge-m3";
-        row.GeneratedAt = DateTimeOffset.UtcNow;
+
+        await db.NoteEmbeddings.Where(e => e.NoteId == note.Id).ExecuteDeleteAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            db.NoteEmbeddings.Add(new NoteEmbedding
+            {
+                NoteId = note.Id,
+                ChunkIndex = i,
+                ChunkCount = chunks.Count,
+                CharStart = chunks[i].Start,
+                CharEnd = chunks[i].End,
+                UserId = note.UserId,
+                EntryDate = note.EntryDate,
+                TitleEnc = note.TitleEnc,
+                Embedding = new Vector(vectors[i]),
+                Model = options.EmbedModel,
+                GeneratedAt = now,
+            });
+        }
         await db.SaveChangesAsync(ct);
+
+        // Only claims freshness for the state that was read; a later edit keeps the note stale.
+        await db.Notes
+            .Where(n => n.Id == note.Id && n.ContentChangedAt == contentAt)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(n => n.IndexedContentAt, contentAt)
+                .SetProperty(n => n.HasText, chunks.Count > 0), ct);
+        await tx.CommitAsync(ct);
     }
 
     private static string Truncate(string value) =>

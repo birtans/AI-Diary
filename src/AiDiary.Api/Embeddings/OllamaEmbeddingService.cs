@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using AiDiary.Api.Configuration;
 
 namespace AiDiary.Api.Embeddings;
@@ -6,13 +7,22 @@ public sealed class OllamaEmbeddingService(HttpClient http, DiaryOptions options
 {
     public const int Dimensions = 1024;
 
-    private sealed record EmbedRequest(string Model, string[] Input, bool Truncate);
+    /// <summary>bge-m3's full context. Ollama's default num_ctx is smaller and would truncate silently.</summary>
+    public const int ContextTokens = 8192;
+
+    private sealed record EmbedOptions([property: JsonPropertyName("num_ctx")] int NumCtx);
+
+    private sealed record EmbedRequest(string Model, string[] Input, bool Truncate, EmbedOptions Options);
 
     private sealed record EmbedResponse(double[][]? Embeddings);
 
-    public async Task<float[]> EmbedAsync(string text, CancellationToken ct = default)
+    public async Task<float[]> EmbedAsync(string text, CancellationToken ct = default) =>
+        (await EmbedManyAsync([text], ct))[0];
+
+    /// <summary>Embeds several inputs in one request; results are in input order.</summary>
+    public async Task<float[][]> EmbedManyAsync(string[] texts, CancellationToken ct = default)
     {
-        var request = new EmbedRequest(options.EmbedModel, [text], Truncate: true);
+        var request = new EmbedRequest(options.EmbedModel, texts, Truncate: true, new EmbedOptions(ContextTokens));
         var response = await http.PostAsJsonAsync(
             $"{options.OllamaUrl.TrimEnd('/')}/api/embed", request, ct);
         if (!response.IsSuccessStatusCode)
@@ -27,9 +37,17 @@ public sealed class OllamaEmbeddingService(HttpClient http, DiaryOptions options
         }
 
         var result = await response.Content.ReadFromJsonAsync<EmbedResponse>(ct);
-        var vector = result?.Embeddings?.FirstOrDefault()
-            ?? throw new InvalidOperationException("Ollama returned no embedding.");
+        var vectors = result?.Embeddings;
+        if (vectors is null || vectors.Length != texts.Length)
+        {
+            throw new InvalidOperationException(
+                $"Ollama returned {vectors?.Length ?? 0} embeddings for {texts.Length} inputs.");
+        }
+        return vectors.Select(Normalise).ToArray();
+    }
 
+    private float[] Normalise(double[] vector)
+    {
         if (vector.Length != Dimensions)
         {
             throw new InvalidOperationException(

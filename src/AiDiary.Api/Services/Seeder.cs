@@ -89,18 +89,24 @@ public sealed class Seeder(
         if (!await db.Notes.AnyAsync(n => n.UserId == user.Id, ct))
         {
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            await notes.CreateAsync(user.Id, new CreateNoteRequest(
-                null, today.AddDays(-1), "Europe/Amsterdam",
-                new NoteLocationRequest(52.1749, 5.0009, "Breukelen"), "user",
-                "Rain on the canal\n\nCycled home in the rain and watched it fall on the water for a while. " +
-                "Not everything needs to be productive."), ct);
-            await notes.CreateAsync(user.Id, new CreateNoteRequest(
-                null, today, null, null, "user",
-                "First day with the new diary\n\nEverything is stored encrypted, indexed with pgvector " +
-                "and searchable by meaning. This note is here to prove the pipeline works."), ct);
-            await notes.CreateAsync(user.Id, new CreateNoteRequest(
-                null, today.AddDays(-3), "Europe/Amsterdam", null, "user",
-                "Reading list\n\nFinished the novel. Next up: something about the history of canals."), ct);
+            CreateNoteRequest[] samples =
+            [
+                new(null, today.AddDays(-1), "Europe/Amsterdam",
+                    new NoteLocationRequest(52.1749, 5.0009, "Breukelen"), "user",
+                    "Rain on the canal\n\nCycled home in the rain and watched it fall on the water for a while. " +
+                    "Not everything needs to be productive."),
+                new(null, today, null, null, "user",
+                    "First day with the new diary\n\nEverything is stored encrypted, indexed with pgvector " +
+                    "and searchable by meaning. This note is here to prove the pipeline works."),
+                new(null, today.AddDays(-3), "Europe/Amsterdam", null, "user",
+                    "Reading list\n\nFinished the novel. Next up: something about the history of canals."),
+            ];
+            foreach (var sample in samples)
+            {
+                // Creating a note doesn't index it; index the samples so search works right away.
+                var created = await notes.CreateAsync(user.Id, sample, ct);
+                await notes.RequestIndexAsync(created.Id, ct);
+            }
             logger.LogInformation("Created sample notes.");
         }
     }

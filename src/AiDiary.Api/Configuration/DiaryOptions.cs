@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace AiDiary.Api.Configuration;
 
 /// <summary>
@@ -60,6 +62,9 @@ public sealed class DiaryOptions
     public int VersionRetentionDays { get; init; } = 90;
     public int TrashRetentionDays { get; init; } = 30;
     public int ConversationRetentionDays { get; init; } = 30;
+    /// <summary>Local wall-clock time of the nightly run (versions, indexing, retention).</summary>
+    public TimeOnly NightlyRunTime { get; init; } = new(2, 0);
+    public string NightlyRunTimezone { get; init; } = "Europe/Amsterdam";
     public string CorsOrigins { get; init; } = "http://localhost:5173,http://localhost:8081";
     public string BaseUrl { get; init; } = "http://localhost:8080";
     public string SmtpHost { get; init; } = "";
@@ -101,6 +106,8 @@ public sealed class DiaryOptions
             VersionRetentionDays = int.TryParse(Env("DIARY_VERSION_RETENTION_DAYS", "90"), out var vd) ? vd : 90,
             TrashRetentionDays = int.TryParse(Env("DIARY_TRASH_RETENTION_DAYS", "30"), out var td) ? td : 30,
             ConversationRetentionDays = int.TryParse(Env("DIARY_CONVERSATION_RETENTION_DAYS", "30"), out var cd) ? cd : 30,
+            NightlyRunTime = TimeOnly.TryParse(Env("DIARY_NIGHTLY_RUN_TIME", "02:00"), CultureInfo.InvariantCulture, out var nt) ? nt : new TimeOnly(2, 0),
+            NightlyRunTimezone = Env("DIARY_NIGHTLY_RUN_TZ", "Europe/Amsterdam"),
             CorsOrigins = Env("DIARY_CORS_ORIGINS", "http://localhost:5173,http://localhost:8081"),
             BaseUrl = Env("DIARY_BASE_URL", "http://localhost:8080"),
             SmtpHost = Env("DIARY_SMTP_HOST", ""),

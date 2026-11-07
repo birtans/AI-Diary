@@ -38,9 +38,18 @@ public sealed class Note
     public int CurrentVersion { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
     public string Origin { get; set; } = "user";
+    /// <summary>False when the working copy's body is empty or whitespace; such notes are never indexed.</summary>
+    public bool HasText { get; set; } = true;
+    /// <summary>Last change to anything that goes into the index: body, title or entry date.</summary>
+    public DateTimeOffset ContentChangedAt { get; set; }
+    /// <summary>The <see cref="ContentChangedAt"/> the stored vectors reflect; null when never indexed.</summary>
+    public DateTimeOffset? IndexedContentAt { get; set; }
 
     public List<NoteVersion> Versions { get; set; } = [];
-    public NoteEmbedding? Embedding { get; set; }
+    public List<NoteEmbedding> Embeddings { get; set; } = [];
+
+    /// <summary>Drives the "not indexed" dot: there is text and the vectors don't reflect it.</summary>
+    public bool NeedsIndex => HasText && IndexedContentAt != ContentChangedAt;
 }
 
 public sealed class NoteVersion
@@ -59,11 +68,23 @@ public sealed class NoteVersion
     public DateTimeOffset? SupersededAt { get; set; }
 }
 
+/// <summary>One vector per part of a note; long notes are split at paragraph boundaries.</summary>
 public sealed class NoteEmbedding
 {
     public Guid NoteId { get; set; }
     public Note Note { get; set; } = null!;
+    /// <summary>Zero-based part number.</summary>
+    public int ChunkIndex { get; set; }
+    public int ChunkCount { get; set; }
+    /// <summary>Start offset of the part in the note body (inclusive).</summary>
+    public int CharStart { get; set; }
+    /// <summary>End offset of the part in the note body (exclusive).</summary>
+    public int CharEnd { get; set; }
     public Guid UserId { get; set; }
+    /// <summary>The note's entry date when this part was indexed.</summary>
+    public DateOnly EntryDate { get; set; }
+    /// <summary>The note's title when this part was indexed, encrypted under the UKEK like notes.TitleEnc.</summary>
+    public byte[] TitleEnc { get; set; } = [];
     public Vector? Embedding { get; set; }
     public string Model { get; set; } = "";
     public DateTimeOffset GeneratedAt { get; set; }

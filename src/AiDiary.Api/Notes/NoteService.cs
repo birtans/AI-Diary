@@ -37,7 +37,8 @@ public sealed class NoteService(
             n.EntryDate,
             n.CurrentVersion,
             n.DeletedAt,
-            n.Origin)).ToList();
+            n.Origin,
+            n.NeedsIndex)).ToList();
     }
 
     public async Task<NoteDetail> GetAsync(Guid userId, Guid noteId, CancellationToken ct = default)
@@ -62,7 +63,8 @@ public sealed class NoteService(
             note.Origin,
             note.DeletedAt,
             storage.PresignGet(current.S3Key),
-            Convert.ToBase64String(crypto.UnwrapDek(ukek, note.WrappedDek)));
+            Convert.ToBase64String(crypto.UnwrapDek(ukek, note.WrappedDek)),
+            note.NeedsIndex);
     }
 
     /// <summary>Fetches and decrypts the body of a version. Plaintext exists only in memory.</summary>
@@ -105,14 +107,16 @@ public sealed class NoteService(
                 : null,
             CurrentVersion = 1,
             Origin = request.Origin == "agent" ? "agent" : "user",
+            HasText = BodyHasText(body),
+            ContentChangedAt = ContentStamp(),
         };
 
         var dek = crypto.UnwrapDek(ukek, note.WrappedDek);
         await WriteVersionAsync(userId, note, title, 1, body, dek, ct);
 
+        // Not indexed here: indexing happens on Save & Index and in the nightly run.
         db.Notes.Add(note);
         await db.SaveChangesAsync(ct);
-        await jobs.EnqueueAsync(JobQueue.KindEmbedNote, new { note_id = note.Id }, ct: ct);
 
         return await GetAsync(userId, note.Id, ct);
     }
@@ -162,44 +166,80 @@ public sealed class NoteService(
             await OverwriteVersionAsync(note, current, title, body, dek, ct);
         }
 
+        // Autosave never indexes; the note shows as not indexed until Save & Index.
+        note.HasText = BodyHasText(body);
+        note.ContentChangedAt = ContentStamp();
         note.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        await jobs.EnqueueAsync(JobQueue.KindEmbedNote, new { note_id = note.Id }, ct: ct);
 
         return await GetAsync(userId, note.Id, ct);
     }
 
     /// <summary>
-    /// "Save Version": freezes the working copy as a retained version (its
-    /// retention clock starts now) and continues editing in a fresh working
-    /// copy. No-op when the newest retained version already holds this text.
+    /// "Save &amp; Index": freezes the working copy as a retained version (its
+    /// retention clock starts now), continues editing in a fresh working copy,
+    /// and queues indexing. The freeze is skipped when the newest retained
+    /// version already holds this text; indexing is skipped when the vectors
+    /// are current.
     /// </summary>
     public async Task<NoteDetail> SaveVersionAsync(Guid userId, Guid noteId, CancellationToken ct = default)
     {
         var user = await RequireUserAsync(userId, ct);
-        var ukek = crypto.UnwrapUkekUnderMaster(user);
-        await using var tx = await LockNoteAsync(userId, noteId, ct);
-        var note = await LoadNoteAsync(userId, noteId, ct);
-
-        if (note.DeletedAt is not null)
+        if (!await SaveVersionAndIndexAsync(user, noteId, writtenAfter: null, ct))
         {
             throw new ConflictException("The note is in the trash. Restore it before saving a version.");
         }
-        var current = note.Versions.First(v => v.VersionNo == note.CurrentVersion);
-        if (IsAlreadyRetained(note, current))
+        return await GetAsync(userId, noteId, ct);
+    }
+
+    /// <summary>
+    /// Nightly run: versions and indexes one note. Only freezes a working copy
+    /// written after <paramref name="writtenAfter"/>, so untouched notes don't
+    /// gain a version every night.
+    /// </summary>
+    public async Task NightlyVersionAndIndexAsync(Guid userId, Guid noteId, DateTimeOffset writtenAfter, CancellationToken ct = default)
+    {
+        var user = await RequireUserAsync(userId, ct);
+        await SaveVersionAndIndexAsync(user, noteId, writtenAfter, ct);
+    }
+
+    /// <summary>Queues indexing for a note regardless of its state (seeding).</summary>
+    public Task RequestIndexAsync(Guid noteId, CancellationToken ct = default) =>
+        jobs.EnqueueUnlessPendingAsync(JobQueue.KindEmbedNote, new { note_id = noteId }, ct);
+
+    /// <summary>False when the note is in the trash.</summary>
+    private async Task<bool> SaveVersionAndIndexAsync(AppUser user, Guid noteId, DateTimeOffset? writtenAfter, CancellationToken ct)
+    {
+        var ukek = crypto.UnwrapUkekUnderMaster(user);
+        await using var tx = await LockNoteAsync(user.Id, noteId, ct);
+        var note = await LoadNoteAsync(user.Id, noteId, ct);
+        if (note.DeletedAt is not null)
         {
-            return await GetAsync(userId, note.Id, ct);
+            return false;
         }
 
-        var dek = crypto.UnwrapDek(ukek, note.WrappedDek);
-        var body = await DecryptVersionAsync(dek, current.S3Key, ct);
-        await FreezeAndAdvanceAsync(userId, note, current, crypto.DecryptText(ukek, note.TitleEnc), body, dek, ct);
-
-        await db.SaveChangesAsync(ct);
+        var current = note.Versions.First(v => v.VersionNo == note.CurrentVersion);
+        var hasRetained = note.Versions.Any(v => v.SupersededAt != null);
+        var shouldFreeze = !IsAlreadyRetained(note, current)
+            && (writtenAfter is null || current.CreatedAt > writtenAfter)
+            // An empty note that never had a version has nothing worth keeping.
+            && (note.HasText || hasRetained);
+        if (shouldFreeze)
+        {
+            var dek = crypto.UnwrapDek(ukek, note.WrappedDek);
+            var body = await DecryptVersionAsync(dek, current.S3Key, ct);
+            await FreezeAndAdvanceAsync(user.Id, note, current, crypto.DecryptText(ukek, note.TitleEnc), body, dek, ct);
+            await db.SaveChangesAsync(ct);
+        }
         await tx.CommitAsync(ct);
 
-        return await GetAsync(userId, note.Id, ct);
+        // Stale even without text: an emptied note's old vectors must go.
+        if (note.IndexedContentAt != note.ContentChangedAt)
+        {
+            await RequestIndexAsync(note.Id, ct);
+        }
+        return true;
     }
 
     // -------------------------------------------------------------- history
@@ -287,10 +327,12 @@ public sealed class NoteService(
         {
             await FreezeAndAdvanceAsync(userId, note, current, title, body, dek, ct);
         }
+        note.HasText = BodyHasText(body);
+        note.ContentChangedAt = ContentStamp();
         note.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        await jobs.EnqueueAsync(JobQueue.KindEmbedNote, new { note_id = note.Id }, ct: ct);
+        await RequestIndexAsync(note.Id, ct);
 
         return await GetAsync(userId, note.Id, ct);
     }
@@ -303,13 +345,18 @@ public sealed class NoteService(
         var ukek = crypto.UnwrapUkekUnderMaster(user);
         var note = await LoadNoteAsync(userId, noteId, ct);
 
-        if (request.Title is { Length: > 0 } title)
+        // Title and date are indexed, so changing them makes the note stale,
+        // but doesn't index it: that waits for Save & Index or the nightly run.
+        if (request.Title is { Length: > 0 } title
+            && title.Trim() != crypto.DecryptText(ukek, note.TitleEnc))
         {
             note.TitleEnc = crypto.EncryptText(ukek, title.Trim());
+            note.ContentChangedAt = ContentStamp();
         }
-        if (request.EntryDate is { } entryDate)
+        if (request.EntryDate is { } entryDate && entryDate != note.EntryDate)
         {
             note.EntryDate = entryDate;
+            note.ContentChangedAt = ContentStamp();
         }
         if (!string.IsNullOrWhiteSpace(request.Timezone))
         {
@@ -336,15 +383,24 @@ public sealed class NoteService(
 
     // -------------------------------------------------------- trash lifecycle
 
+    /// <summary>
+    /// Moves a note to the trash and deletes its vectors. Restoring it doesn't
+    /// re-index; it shows as not indexed until Save &amp; Index or the nightly run.
+    /// </summary>
     public async Task SoftDeleteAsync(Guid userId, Guid noteId, CancellationToken ct = default)
     {
+        await using var tx = await LockNoteAsync(userId, noteId, ct);
         var note = await LoadNoteAsync(userId, noteId, ct);
         if (note.DeletedAt is null)
         {
             note.DeletedAt = DateTimeOffset.UtcNow;
             note.UpdatedAt = DateTimeOffset.UtcNow;
+            note.IndexedContentAt = null;
+            await db.NoteEmbeddings.Where(e => e.NoteId == noteId).ExecuteDeleteAsync(ct);
+            await jobs.CancelPendingAsync(JobQueue.KindEmbedNote, new { note_id = noteId }, ct);
             await db.SaveChangesAsync(ct);
         }
+        await tx.CommitAsync(ct);
     }
 
     public async Task RestoreAsync(Guid userId, Guid noteId, CancellationToken ct = default)
@@ -397,6 +453,15 @@ public sealed class NoteService(
         var plaintext = AiDiary.Crypto.FileEnvelope.Open(file, dek);
         var (_, body) = NoteContent.Split(Encoding.UTF8.GetString(plaintext));
         return body;
+    }
+
+    private static bool BodyHasText(string body) => !string.IsNullOrWhiteSpace(body);
+
+    /// <summary>Now, at Postgres timestamptz precision, so it compares equal after a round trip.</summary>
+    private static DateTimeOffset ContentStamp()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new DateTimeOffset(now.Ticks - now.Ticks % 10, TimeSpan.Zero);
     }
 
     /// <summary>Opaque optimistic-concurrency token: changes whenever the working copy's text does.</summary>

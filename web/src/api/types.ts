@@ -11,6 +11,7 @@ export interface NoteListItem {
   currentVersion: number;
   deletedAt?: string;
   origin: "user" | "agent";
+  needsIndex: boolean; // has text that search hasn't indexed yet
 }
 
 export type DateOnlyString = string; // YYYY-MM-DD
@@ -29,6 +30,7 @@ export interface NoteDetail {
   deletedAt?: string | null;
   presignedUrl: string;
   dek: string; // base64 of the unwrapped 32-byte data key
+  needsIndex: boolean;
 }
 
 export interface NoteVersionItem {

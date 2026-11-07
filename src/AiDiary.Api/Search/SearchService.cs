@@ -24,6 +24,8 @@ public sealed class SearchService(
     private sealed class Hit
     {
         public Guid NoteId { get; set; }
+        public int CharStart { get; set; }
+        public int CharEnd { get; set; }
         public double Score { get; set; }
     }
 
@@ -41,15 +43,24 @@ public sealed class SearchService(
         var to = new NpgsqlParameter("to", NpgsqlDbType.Date) { Value = (object?)request.DateTo ?? DBNull.Value };
         var lim = new NpgsqlParameter("lim", NpgsqlDbType.Integer) { Value = limit };
 
+        // A note can have several parts: rank each note by its best part, so
+        // one long note can't take every result slot. Exact scan per user;
+        // at this scale it beats a post-filtered HNSW scan on recall.
         var sql = """
-            SELECT ne."NoteId" AS "NoteId", 1 - (ne."Embedding" <=> @q::vector) AS "Score"
-            FROM note_embeddings ne
-            JOIN notes n ON n."Id" = ne."NoteId" AND n."DeletedAt" IS NULL
-            WHERE ne."UserId" = @uid
-              AND ne."Embedding" IS NOT NULL
-              AND (@from IS NULL OR n."EntryDate" >= @from)
-              AND (@to IS NULL OR n."EntryDate" <= @to)
-            ORDER BY ne."Embedding" <=> @q::vector
+            SELECT best."NoteId", best."CharStart", best."CharEnd", best."Score"
+            FROM (
+                SELECT DISTINCT ON (ne."NoteId")
+                    ne."NoteId" AS "NoteId", ne."CharStart" AS "CharStart", ne."CharEnd" AS "CharEnd",
+                    1 - (ne."Embedding" <=> @q::vector) AS "Score"
+                FROM note_embeddings ne
+                JOIN notes n ON n."Id" = ne."NoteId" AND n."DeletedAt" IS NULL
+                WHERE ne."UserId" = @uid
+                  AND ne."Embedding" IS NOT NULL
+                  AND (@from IS NULL OR n."EntryDate" >= @from)
+                  AND (@to IS NULL OR n."EntryDate" <= @to)
+                ORDER BY ne."NoteId", ne."Embedding" <=> @q::vector
+            ) best
+            ORDER BY best."Score" DESC
             LIMIT @lim
             """;
 
@@ -69,13 +80,14 @@ public sealed class SearchService(
                 continue;
             }
             var title = crypto.DecryptText(ukek, note.TitleEnc);
-            var excerpt = await ExcerptAsync(ukek, note, ct);
+            var excerpt = await ExcerptAsync(ukek, note, hit.CharStart, hit.CharEnd, ct);
             results.Add(new SearchResultItem(note.Id, note.EntryDate, title, excerpt, Math.Round(hit.Score, 4)));
         }
         return results;
     }
 
-    private async Task<string> ExcerptAsync(byte[] ukek, Note note, CancellationToken ct)
+    /// <summary>Excerpt from the matching part; falls back to the body start if the body has since shrunk.</summary>
+    private async Task<string> ExcerptAsync(byte[] ukek, Note note, int charStart, int charEnd, CancellationToken ct)
     {
         try
         {
@@ -88,6 +100,10 @@ public sealed class SearchService(
             var file = await storage.GetAsync(version.S3Key, ct);
             var plaintext = AiDiary.Crypto.FileEnvelope.Open(file, dek);
             var (_, body) = NoteContent.Split(Encoding.UTF8.GetString(plaintext));
+            if (charStart > 0 && charStart < charEnd && charEnd <= body.Length)
+            {
+                body = body[charStart..charEnd];
+            }
             var flattened = string.Join(" ", body.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0));
             if (flattened.Length <= MaxExcerptChars)
             {

@@ -222,6 +222,7 @@ All variables are listed in `.env.example`. Highlights:
 | `DIARY_OIDC_*` | Keycloak authority, admin client id/secret, expected audience |
 | `DIARY_CAPTCHA_PROVIDER` | `turnstile`, `hcaptcha` or `none` for the public request form |
 | `DIARY_*_RETENTION_DAYS` | 90 (versions), 30 (trash), 30 (conversations) — policy, not tuning knobs |
+| `DIARY_NIGHTLY_RUN_TIME` / `DIARY_NIGHTLY_RUN_TZ` | `02:00`, `Europe/Amsterdam`: when nightly versioning, indexing and retention run |
 | `DIARY_SMTP_*` | optional SMTP for admin notifications |
 
 Additions beyond the specification's variable list: `DIARY_OIDC_AUDIENCE`
@@ -382,10 +383,16 @@ an earlier commit SHA and redeploy.
   `note_embeddings` (`vector_cosine_ops`). On a managed database whose user
   cannot create extensions, run `CREATE EXTENSION IF NOT EXISTS vector;` and
   `... citext;` as the admin once.
-- **Retention** runs nightly at 03:00 UTC (and once on startup): superseded
-  versions after 90 days, trashed notes after 30 days, conversations after
-  30 days, access-request IPs after 90 days. Deletes are B2-first, then
-  Postgres. The clock starts at supersession, not creation.
+- **Nightly run** at 02:00 Europe/Amsterdam (`DIARY_NIGHTLY_RUN_TIME`,
+  `DIARY_NIGHTLY_RUN_TZ`). Retention first: superseded versions after 90
+  days, trashed notes after 30 days, conversations after 30 days,
+  access-request IPs after 90 days. Deletes are B2-first, then Postgres. The
+  clock starts at supersession, not creation. Then every note written since
+  the previous run gets a version, and every note that needs indexing is
+  queued.
+- **Indexing** happens on Save & Index, on restoring a version, and in the
+  nightly run, never on autosave. Notes with text that isn't indexed yet show
+  a yellow dot in the sidebar.
 - **Logging** is redacted by property name (bodies, titles, keys, presigned
   URLs, chat content) — a presigned URL in a log is a five-minute window onto
   a note for anyone reading the log.

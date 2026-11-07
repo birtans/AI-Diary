@@ -210,6 +210,9 @@ namespace AiDiary.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset>("ContentChangedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -221,6 +224,12 @@ namespace AiDiary.Api.Migrations
 
                     b.Property<DateOnly>("EntryDate")
                         .HasColumnType("date");
+
+                    b.Property<bool>("HasText")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("IndexedContentAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<byte[]>("LocationLabelEnc")
                         .HasColumnType("bytea");
@@ -271,8 +280,23 @@ namespace AiDiary.Api.Migrations
                     b.Property<Guid>("NoteId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("ChunkIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CharEnd")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CharStart")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ChunkCount")
+                        .HasColumnType("integer");
+
                     b.Property<Vector>("Embedding")
                         .HasColumnType("vector(1024)");
+
+                    b.Property<DateOnly>("EntryDate")
+                        .HasColumnType("date");
 
                     b.Property<DateTimeOffset>("GeneratedAt")
                         .HasColumnType("timestamp with time zone");
@@ -281,10 +305,14 @@ namespace AiDiary.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<byte[]>("TitleEnc")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
-                    b.HasKey("NoteId");
+                    b.HasKey("NoteId", "ChunkIndex");
 
                     b.HasIndex("UserId");
 
@@ -360,8 +388,8 @@ namespace AiDiary.Api.Migrations
             modelBuilder.Entity("AiDiary.Api.Data.NoteEmbedding", b =>
                 {
                     b.HasOne("AiDiary.Api.Data.Note", "Note")
-                        .WithOne("Embedding")
-                        .HasForeignKey("AiDiary.Api.Data.NoteEmbedding", "NoteId")
+                        .WithMany("Embeddings")
+                        .HasForeignKey("NoteId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -391,7 +419,7 @@ namespace AiDiary.Api.Migrations
 
             modelBuilder.Entity("AiDiary.Api.Data.Note", b =>
                 {
-                    b.Navigation("Embedding");
+                    b.Navigation("Embeddings");
 
                     b.Navigation("Versions");
                 });

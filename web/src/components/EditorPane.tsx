@@ -179,7 +179,12 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
       const updated = await api.post<NoteDetail>(`/api/notes/${detail.id}/versions`);
       setDetail(updated);
       onNoteChanged(updated);
-      setVersionNotice("Version saved");
+      if (updated.needsIndex) {
+        window.dispatchEvent(new CustomEvent("ai-diary:index-requested", { detail: updated.id }));
+        setVersionNotice("Version saved · indexing for search");
+      } else {
+        setVersionNotice("Version saved");
+      }
     } catch (ex) {
       setMetaError(ex instanceof Error ? ex.message : "Could not save the version.");
     } finally {
@@ -425,9 +430,9 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
                 className="primary-button"
                 disabled={savingVersion}
                 onClick={() => void saveVersion()}
-                title="Keep the current text as a version for the retention period"
+                title="Keep the current text as a version for the retention period and index it for search"
               >
-                Save Version
+                Save &amp; Index
               </button>
               <button type="button" className="secondary-button" onClick={togglePreview}>
                 Preview Mode

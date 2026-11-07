@@ -318,6 +318,27 @@ label > select {
   white-space: nowrap;
 }
 
+/* Inline-block so the "not indexed" dot sits right after the text, and the
+   text still ellipsises with room left for the dot. */
+.note-item-name {
+  display: inline-block;
+  max-width: calc(100% - 10px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.index-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 2px 0 0 3px;
+  border-radius: 50%;
+  background: #e5b80b; /* yellow, readable on light and dark themes */
+  vertical-align: top;
+}
+
 .origin-tag {
   font-size: 10px;
   font-weight: 600;
