@@ -35,6 +35,9 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
   const [showHistory, setShowHistory] = useState(false);
   const [conflict, setConflict] = useState<{ message: string; currentRevision: string } | null>(null);
   const [savingVersion, setSavingVersion] = useState(false);
+  // The detail "Save & Index" returned. needsIndex stays true on it until the
+  // worker finishes, so the preview button hides while it is still current.
+  const [indexQueuedFor, setIndexQueuedFor] = useState<NoteDetail | null>(null);
   const [versionNotice, setVersionNotice] = useState("");
   const [mirrorOffer, setMirrorOffer] = useState<{ mirror: string; server: string } | null>(null);
   const [metaError, setMetaError] = useState("");
@@ -199,6 +202,7 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
       if (!(await save())) return;
       const updated = await api.post<NoteDetail>(`/api/notes/${detail.id}/versions`);
       setDetail(updated);
+      setIndexQueuedFor(updated);
       onNoteChanged(updated);
       if (updated.needsIndex) {
         window.dispatchEvent(new CustomEvent("ai-diary:index-requested", { detail: updated.id }));
@@ -438,9 +442,22 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
             <span className="muted">{versionNotice}</span>
           ) : null}
           {isPreview ? (
-            <button type="button" className="secondary-button" onClick={togglePreview}>
-              Edit
-            </button>
+            <>
+              {((detail.needsIndex && detail !== indexQueuedFor) || savingVersion) && (
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={savingVersion}
+                  onClick={() => void saveVersion()}
+                  title="This note isn't indexed for search yet. Keep the current text as a version and index it"
+                >
+                  Save &amp; Index
+                </button>
+              )}
+              <button type="button" className="secondary-button" onClick={togglePreview}>
+                Edit
+              </button>
+            </>
           ) : (
             <>
               <button type="button" className="secondary-button" onClick={() => setShowHistory(true)}>
