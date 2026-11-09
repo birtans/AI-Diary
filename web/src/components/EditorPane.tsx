@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
@@ -8,6 +8,7 @@ import { decryptNoteBody } from "../lib/crypto";
 import { stripFrontmatter } from "../lib/frontmatter";
 import { getBuffer, putBuffer } from "../lib/indexeddb";
 import { markSaved } from "../lib/crashFlush";
+import { rehypeSourceOffsets, sourceRangeAt } from "../lib/sourceOffsets";
 import { EditorTextarea, type EditorTextareaHandle } from "./EditorTextarea";
 import { FormatToolbar } from "./FormatToolbar";
 import { HistoryModal } from "./HistoryModal";
@@ -46,6 +47,10 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
   const [locationDraft, setLocationDraft] = useState("");
 
   const editorRef = useRef<EditorTextareaHandle>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Set by a double-click in the preview: where to put the caret, and the
+  // viewport y it should end up at, once the textarea has mounted.
+  const pendingCaret = useRef<{ offset: number; clientY: number } | null>(null);
   const saveTimer = useRef<number | null>(null);
   const mirrorTimer = useRef<number | null>(null);
   const bodyRef = useRef(body);
@@ -58,6 +63,22 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
   const inFlightSave = useRef<Promise<boolean> | null>(null);
 
   const togglePreview = () => setIsPreview((prev) => !prev);
+
+  const editAtClick = (event: React.MouseEvent) => {
+    const range = sourceRangeAt(event.target, bodyRef.current);
+    if (range) pendingCaret.current = { offset: range.end, clientY: event.clientY };
+    setIsPreview(false);
+  };
+
+  // Runs after the textarea has grown to full height (its own layout effect
+  // runs first), so the scroll position isn't clamped by a one-row textarea.
+  useLayoutEffect(() => {
+    const pending = pendingCaret.current;
+    pendingCaret.current = null;
+    if (isPreview || !pending) return;
+    const caretY = editorRef.current?.placeCaret(pending.offset);
+    if (caretY != null && scrollRef.current) scrollRef.current.scrollTop += caretY - pending.clientY;
+  }, [isPreview]);
 
   const load = useCallback(
     async (id: string) => {
@@ -358,7 +379,7 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
         </div>
       )}
 
-      <div className="editor-scroll">
+      <div className="editor-scroll" ref={scrollRef}>
         <div className="editor-header">
           {editingTitle ? (
             <input
@@ -443,8 +464,8 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
 
         <div className="editor-body">
           {isPreview ? (
-            <div className="preview markdown-body" onDoubleClick={() => setIsPreview(false)}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+            <div className="preview markdown-body" onDoubleClick={editAtClick}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize, rehypeSourceOffsets]}>
                 {body || "_Nothing written yet._"}
               </ReactMarkdown>
             </div>

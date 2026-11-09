@@ -1,7 +1,9 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import React, { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from "react";
 
 export interface EditorTextareaHandle {
   focus: () => void;
+  /** Focuses with the caret at `offset`; returns the viewport y of the caret's line centre. */
+  placeCaret: (offset: number) => number | null;
   insertText: (text: string) => void;
   wrapSelection: (before: string, after: string) => void;
   prefixLines: (prefix: string) => void;
@@ -28,8 +30,9 @@ export const EditorTextarea = forwardRef<EditorTextareaHandle, Props>(function E
 ) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-grow: no inner scrollbar.
-  useEffect(() => {
+  // Auto-grow: no inner scrollbar. Layout effect so the full height is in
+  // place before the parent restores its scroll position.
+  useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
@@ -40,6 +43,13 @@ export const EditorTextarea = forwardRef<EditorTextareaHandle, Props>(function E
     ref,
     () => ({
       focus: () => textareaRef.current?.focus(),
+      placeCaret: (offset: number) => {
+        const el = textareaRef.current;
+        if (!el) return null;
+        el.focus({ preventScroll: true });
+        el.setSelectionRange(offset, offset);
+        return caretLineCentre(el, offset);
+      },
       insertText: (text: string) => {
         const el = textareaRef.current;
         if (!el) return;
@@ -120,6 +130,46 @@ export const EditorTextarea = forwardRef<EditorTextareaHandle, Props>(function E
 });
 
 // ------------------------------------------------------------- behaviours
+
+const MIRRORED_STYLES = [
+  "boxSizing", "width", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+  "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth", "borderStyle",
+  "fontFamily", "fontSize", "fontWeight", "fontStyle", "fontVariant", "lineHeight",
+  "letterSpacing", "wordSpacing", "textIndent", "textTransform", "tabSize",
+] as const;
+
+/**
+ * Textareas don't expose caret geometry, so lay the same text out in a hidden
+ * div with identical metrics and measure a marker at `offset`.
+ */
+function caretLineCentre(el: HTMLTextAreaElement, offset: number): number {
+  const style = getComputedStyle(el);
+  const mirror = document.createElement("div");
+  for (const prop of MIRRORED_STYLES) mirror.style[prop] = style[prop];
+  Object.assign(mirror.style, {
+    position: "absolute",
+    visibility: "hidden",
+    top: "0",
+    left: "-9999px",
+    whiteSpace: "pre-wrap",
+    overflowWrap: "break-word",
+  });
+  mirror.textContent = el.value.slice(0, offset);
+  // The marker holds the character after the caret, and the rest of the text
+  // follows, so wrapping matches the textarea. A newline (or the end) gets a
+  // zero-width space instead: a span starting with a line break reports the
+  // next line's position.
+  const next = el.value.charAt(offset);
+  const visible = next !== "" && next !== "\n";
+  const marker = document.createElement("span");
+  marker.textContent = visible ? next : "\u200b";
+  mirror.append(marker, el.value.slice(visible ? offset + 1 : offset));
+  document.body.appendChild(mirror);
+  const lineTop = marker.getBoundingClientRect().top - mirror.getBoundingClientRect().top;
+  mirror.remove();
+  const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
+  return el.getBoundingClientRect().top - el.scrollTop + lineTop + lineHeight / 2;
+}
 
 const LIST_RE = /^(\s*)([-*+]|\d+[.)])\s+(\[[ xX]\]\s+)?(.*)$/;
 
