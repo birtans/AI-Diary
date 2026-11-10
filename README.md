@@ -419,3 +419,8 @@ B2 contents alone: unreadable. Postgres dump alone: metadata, wrapped keys,
 invertible embeddings — no plaintext. Both together without the master key:
 still unreadable. Master key + either store, or root on the host, or the
 operator: full read. That is inherent to the model.
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 or later.
+See [LICENSE](LICENSE) for the full text.
