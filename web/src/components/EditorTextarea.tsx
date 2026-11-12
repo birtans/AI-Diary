@@ -15,7 +15,6 @@ interface Props {
   value: string;
   onChange: (next: string) => void;
   onBlur?: () => void;
-  onDoubleClick?: () => void;
   placeholder?: string;
 }
 
@@ -25,7 +24,7 @@ interface Props {
  * browser's native undo stack. Deprecated, and the only thing that works.
  */
 export const EditorTextarea = forwardRef<EditorTextareaHandle, Props>(function EditorTextarea(
-  { value, onChange, onBlur, onDoubleClick, placeholder },
+  { value, onChange, onBlur, placeholder },
   ref,
 ) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -120,7 +119,6 @@ export const EditorTextarea = forwardRef<EditorTextareaHandle, Props>(function E
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onBlur={onBlur}
-      onDoubleClick={onDoubleClick}
       onKeyDown={handleKeyDown}
       placeholder={placeholder ?? "Write…"}
       spellCheck

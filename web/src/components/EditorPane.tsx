@@ -492,7 +492,6 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
               value={body}
               onChange={onBodyChange}
               onBlur={onBlur}
-              onDoubleClick={() => setIsPreview(true)}
             />
           )}
         </div>

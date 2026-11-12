@@ -387,6 +387,10 @@ label > select {
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   flex-shrink: 0;
+  /* Pinned while the note scrolls so its buttons stay within reach. */
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
 
 .note-title {
