@@ -26,6 +26,13 @@ public sealed partial class ChatService(
     private const int MaxHistoryMessages = 20;
     private const int MaxToolTurns = 4;
 
+    // Strict OpenAI-compatible servers reject explicit nulls such as
+    // "tool_calls": null on a user message or "tools": null on the request.
+    private static readonly JsonSerializerOptions RequestJson = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
     // -------------------------------------------------------------- DTOs
 
     private sealed class ApiMessage
@@ -102,10 +109,10 @@ public sealed partial class ChatService(
         var baseUrl = NormalizeEndpoint(user.LlmEndpointUrl);
 
         var conversation = await GetOrCreateConversationAsync(userId, request, ukek, ct);
+        // The history already ends with the user message just persisted above.
         var history = await LoadHistoryAsync(conversation.Id, ukek, ct);
 
-        var userMessage = new ApiMessage { Role = "user", Content = request.Message };
-        var messages = BuildMessages(history, userMessage, jsonMode: false);
+        var messages = BuildMessages(history, jsonMode: false);
 
         var citedIds = new List<Guid>();
         string? draftJson = null;
@@ -122,7 +129,7 @@ public sealed partial class ChatService(
             if (toolsUnsupported && !jsonMode)
             {
                 jsonMode = true;
-                messages = BuildMessages(history, userMessage, jsonMode: true);
+                messages = BuildMessages(history, jsonMode: true);
                 logger.LogInformation("LLM endpoint does not support tools; switching to JSON prompt.");
                 continue;
             }
@@ -152,8 +159,11 @@ public sealed partial class ChatService(
                             throw new ConflictException("The LLM endpoint produced no response after drafting.");
                         break;
                     }
+                    // No native tool calling here, so a "tool" role message (which
+                    // needs a matching tool_call_id) would be rejected. Feed the
+                    // result back as a user turn instead.
                     messages.Add(new ApiMessage { Role = "assistant", Content = parsed.Value.ToolResultMessage });
-                    messages.Add(new ApiMessage { Role = "tool", Content = result.Content });
+                    messages.Add(new ApiMessage { Role = "user", Content = "Tool result for " + result.Name + ":\n" + result.Content });
                     continue;
                 }
                 finalText = parsed.Value.Reply;
@@ -277,11 +287,22 @@ public sealed partial class ChatService(
     }
 
     private static List<ApiMessage> BuildMessages(
-        List<(string Role, string Content)> history, ApiMessage userMessage, bool jsonMode)
+        List<(string Role, string Content)> history, bool jsonMode)
     {
         var messages = new List<ApiMessage> { new() { Role = "system", Content = SystemPrompt(jsonMode) } };
-        messages.AddRange(history.Select(h => new ApiMessage { Role = h.Role, Content = h.Content }));
-        messages.Add(userMessage);
+        foreach (var (role, content) in history)
+        {
+            // Earlier failed turns leave user messages without an assistant
+            // reply. Many chat templates require roles to alternate, so merge
+            // consecutive messages from the same role.
+            var last = messages[^1];
+            if (messages.Count > 1 && last.Role == role)
+            {
+                last.Content = last.Content + "\n\n" + content;
+                continue;
+            }
+            messages.Add(new ApiMessage { Role = role, Content = content });
+        }
         return messages;
     }
 
@@ -368,17 +389,21 @@ public sealed partial class ChatService(
             tools,
             stream = false,
         };
-        var response = await http.PostAsJsonAsync(baseUrl + "/chat/completions", body, ct);
-        if (tools is not null && response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+        using var response = await http.PostAsJsonAsync(baseUrl + "/chat/completions", body, RequestJson, ct);
+        if (!response.IsSuccessStatusCode)
         {
             var bodyText = await response.Content.ReadAsStringAsync(ct);
-            if (bodyText.Contains("tool", StringComparison.OrdinalIgnoreCase) ||
-                bodyText.Contains("function", StringComparison.OrdinalIgnoreCase))
+            if (tools is not null && response.StatusCode == System.Net.HttpStatusCode.BadRequest &&
+                (bodyText.Contains("tool", StringComparison.OrdinalIgnoreCase) ||
+                 bodyText.Contains("function", StringComparison.OrdinalIgnoreCase)))
             {
                 return (null, [], ToolsUnsupported: true);
             }
+            // Surface the provider's reason to the user (it is their own
+            // endpoint) rather than failing with an opaque 500. Not logged.
+            throw new ConflictException(
+                $"The LLM endpoint returned {(int)response.StatusCode} ({response.ReasonPhrase}): {ExtractProviderError(bodyText)}");
         }
-        response.EnsureSuccessStatusCode();
         var result = await response.Content.ReadFromJsonAsync<ChatResponse>(ct);
         var message = result?.Choices.FirstOrDefault()?.Message;
         if (message is null)
@@ -414,7 +439,7 @@ public sealed partial class ChatService(
             };
             using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/chat/completions")
             {
-                Content = JsonContent.Create(body),
+                Content = JsonContent.Create(body, options: RequestJson),
             };
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!response.IsSuccessStatusCode)
@@ -622,6 +647,41 @@ public sealed partial class ChatService(
             client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", "Bearer " + Encoding.UTF8.GetString(apiKey));
         }
         return client;
+    }
+
+    private static string ExtractProviderError(string bodyText)
+    {
+        const int maxLength = 500;
+        var message = bodyText;
+        try
+        {
+            using var doc = JsonDocument.Parse(bodyText);
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out var error))
+            {
+                if (error.ValueKind == JsonValueKind.String)
+                {
+                    message = error.GetString() ?? bodyText;
+                }
+                else if (error.ValueKind == JsonValueKind.Object &&
+                         error.TryGetProperty("message", out var inner) &&
+                         inner.ValueKind == JsonValueKind.String)
+                {
+                    message = inner.GetString() ?? bodyText;
+                }
+            }
+            else if (root.ValueKind == JsonValueKind.Object &&
+                     root.TryGetProperty("message", out var top) &&
+                     top.ValueKind == JsonValueKind.String)
+            {
+                message = top.GetString() ?? bodyText;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+        message = string.IsNullOrWhiteSpace(message) ? "no details" : message.Trim();
+        return message.Length <= maxLength ? message : message[..maxLength] + "…";
     }
 
     private static string NormalizeEndpoint(string url)
