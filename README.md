@@ -340,10 +340,11 @@ means rebuilding the web image.
 
 ### 3. Build and deploy
 
-*Actions* → **Build and publish Docker images** → *Run workflow*. It builds
-and pushes `ai-diary-web` and `ai-diary-api` (tagged `latest` and the commit
-SHA), then triggers the Coolify deploy. On first start the API runs the
-database migrations and creates the bucket if it doesn't exist.
+For the first deploy: *Actions* → **Build and deploy** → *Run workflow*
+(both images ticked). It builds and pushes `ai-diary-web` and `ai-diary-api`
+(tagged `latest` and the commit SHA), then triggers the Coolify deploy. On
+first start the API runs the database migrations and creates the bucket if it
+doesn't exist.
 
 Check that `https://<api-domain>/health/ready` returns healthy and that the
 web app redirects to the Keycloak login page.
@@ -372,9 +373,24 @@ screen → Keycloak emails them a link to set their password.
 
 ### Updating
 
-Run the workflow again; Coolify redeploys with the new `latest` images.
-Migrations apply automatically. To roll back, set `IMAGE_TAG` in Coolify to
-an earlier commit SHA and redeploy.
+Pushes to `main` deploy automatically, building only what changed:
+
+| Changed paths | Builds |
+| ------------- | ------ |
+| `web/**` | web image |
+| `src/AiDiary.Api/**`, `src/AiDiary.Crypto/**`, `src/AiDiary.sln` | api image |
+| `.github/workflows/docker-publish.yml` | both |
+| `docker-compose.prod.yml` | nothing, redeploy only |
+
+A push touching both sides triggers one redeploy. Only the rebuilt image gets
+a new `latest`, so the other service keeps its running container. To rebuild
+one side by hand, run the workflow manually and untick the other image.
+
+Migrations apply automatically. To roll back, set `WEB_IMAGE_TAG` or
+`API_IMAGE_TAG` in Coolify to an earlier commit SHA and redeploy. Each image
+is only tagged with the SHAs of commits that rebuilt it, so pick one from that
+image's own build history. `IMAGE_TAG` sets both at once and only works for a
+commit that rebuilt both.
 
 ## Operations
 

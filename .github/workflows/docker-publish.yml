@@ -1,7 +1,28 @@
-name: Build and publish Docker images
+name: Build and deploy
 
+# Pushes to main build and deploy only the part that changed:
+#   web/**                    → web image
+#   src/ (API + its deps)     → api image
+# A manual run builds whichever images are ticked (both by default).
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      web:
+        description: Build and deploy the web image
+        type: boolean
+        default: true
+      api:
+        description: Build and deploy the api image
+        type: boolean
+        default: true
+
+# One deploy at a time; a newer push waits instead of cancelling a deploy
+# that is already halfway through.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: registry.birtan.dev
@@ -10,7 +31,52 @@ env:
   COOLIFY_URL: https://containers.birtan.dev
 
 jobs:
-  build-and-push:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.decide.outputs.web }}
+      api: ${{ steps.decide.outputs.api }}
+      stack: ${{ steps.decide.outputs.stack }}
+    steps:
+      - name: Checkout
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+
+      # Compares the pushed commits against the previous head of the branch.
+      # Editing this workflow counts as a change to both images.
+      - name: Detect changed paths
+        id: filter
+        if: github.event_name == 'push'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            web:
+              - 'web/**'
+              - '.github/workflows/docker-publish.yml'
+            api:
+              - 'src/AiDiary.Api/**'
+              - 'src/AiDiary.Crypto/**'
+              - 'src/AiDiary.sln'
+              - '.github/workflows/docker-publish.yml'
+            stack:
+              - 'docker-compose.prod.yml'
+
+      - name: Decide what to build
+        id: decide
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "web=${{ inputs.web }}" >> "$GITHUB_OUTPUT"
+            echo "api=${{ inputs.api }}" >> "$GITHUB_OUTPUT"
+            echo "stack=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "web=${{ steps.filter.outputs.web }}" >> "$GITHUB_OUTPUT"
+            echo "api=${{ steps.filter.outputs.api }}" >> "$GITHUB_OUTPUT"
+            echo "stack=${{ steps.filter.outputs.stack }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,9 +101,7 @@ jobs:
           username: ${{ secrets.REGISTRY_USER }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      # Build context is the repo root for both images — each Dockerfile
-      # COPYs from paths outside its own directory (web/Dockerfile reaches
-      # into web/, the API Dockerfile reaches into src/).
+      # Build context is the repo root — web/Dockerfile COPYs from web/.
       - name: Build and push web
         uses: docker/build-push-action@v6
         with:
@@ -54,6 +118,25 @@ jobs:
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 
+  build-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      # Build context is the repo root — the API Dockerfile COPYs from src/.
       - name: Build and push api
         uses: docker/build-push-action@v6
         with:
@@ -66,12 +149,23 @@ jobs:
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
 
+  # Runs once after whichever builds ran, so a push touching both sides
+  # still triggers a single redeploy. Skipped builds don't block it; failed
+  # ones do. Only the image that was pushed has a new `latest`, so the
+  # other service keeps running the image it already has.
   trigger-redeploy:
-    needs: build-and-push
+    needs: [changes, build-web, build-api]
+    if: >-
+      always() &&
+      !cancelled() &&
+      !contains(needs.*.result, 'failure') &&
+      (needs.build-web.result == 'success' ||
+       needs.build-api.result == 'success' ||
+       needs.changes.outputs.stack == 'true')
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Coolify redeploy
         run: |
           curl -fsSL -X POST \
-            "${{ env.COOLIFY_URL }}/api/v1/deploy?uuid=${{ secrets.COOLIFY_APP_UUID }}&force=true" \
+            "${{ env.COOLIFY_URL }}/api/v1/deploy?uuid=${{ secrets.COOLIFY_APP_UUID }}" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"
