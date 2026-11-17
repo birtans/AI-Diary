@@ -9,6 +9,7 @@ import { stripFrontmatter } from "../lib/frontmatter";
 import { getBuffer, putBuffer } from "../lib/indexeddb";
 import { markSaved } from "../lib/crashFlush";
 import { rehypeSourceOffsets, sourceRangeAt } from "../lib/sourceOffsets";
+import { getScrollPosition, setScrollPosition } from "../lib/scrollPositions";
 import { EditorTextarea, type EditorTextareaHandle } from "./EditorTextarea";
 import { FormatToolbar } from "./FormatToolbar";
 import { HistoryModal } from "./HistoryModal";
@@ -51,7 +52,10 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
 
   const editorRef = useRef<EditorTextareaHandle>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  // Set by a double-click in the preview: where to put the caret, and the
+  const noteIdRef = useRef(noteId);
+  noteIdRef.current = noteId;
+  const scrollSaveTimer = useRef<number | null>(null);
+  // Set by a triple-click in the preview: where to put the caret, and the
   // viewport y it should end up at, once the textarea has mounted.
   const pendingCaret = useRef<{ offset: number; clientY: number } | null>(null);
   const saveTimer = useRef<number | null>(null);
@@ -67,7 +71,10 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
 
   const togglePreview = () => setIsPreview((prev) => !prev);
 
+  // Triple-click (event.detail counts consecutive clicks) so a double-click
+  // can still select a word while reading.
   const editAtClick = (event: React.MouseEvent) => {
+    if (event.detail !== 3) return;
     const range = sourceRangeAt(event.target, bodyRef.current);
     if (range) pendingCaret.current = { offset: range.end, clientY: event.clientY };
     setIsPreview(false);
@@ -82,6 +89,35 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
     const caretY = editorRef.current?.placeCaret(pending.offset);
     if (caretY != null && scrollRef.current) scrollRef.current.scrollTop += caretY - pending.clientY;
   }, [isPreview]);
+
+  // Remember where each note was scrolled to. Ignored while switching notes:
+  // the old note is still on screen then, and its scrollTop gets clamped.
+  const onScroll = () => {
+    const el = scrollRef.current;
+    const id = detailRef.current?.id;
+    if (!el || !id || id !== noteIdRef.current) return;
+    const range = el.scrollHeight - el.clientHeight;
+    const position = {
+      top: el.scrollTop,
+      ratio: range > 0 ? el.scrollTop / range : 0,
+      mode: isPreview ? ("preview" as const) : ("edit" as const),
+    };
+    if (scrollSaveTimer.current) window.clearTimeout(scrollSaveTimer.current);
+    scrollSaveTimer.current = window.setTimeout(() => setScrollPosition(id, position), 200);
+  };
+
+  // Restore it when a different note's content first renders. Layout effect so
+  // it lands before paint and before the browser's own scroll event.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !detail) return;
+    const saved = getScrollPosition(detail.id);
+    const mode = isPreview ? "preview" : "edit";
+    if (!saved) el.scrollTop = 0;
+    else if (saved.mode === mode) el.scrollTop = saved.top;
+    else el.scrollTop = saved.ratio * (el.scrollHeight - el.clientHeight);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.id]);
 
   const load = useCallback(
     async (id: string) => {
@@ -383,7 +419,7 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
         </div>
       )}
 
-      <div className="editor-scroll" ref={scrollRef}>
+      <div className="editor-scroll" ref={scrollRef} onScroll={onScroll}>
         <div className="editor-header">
           {editingTitle ? (
             <input
@@ -481,7 +517,7 @@ export function EditorPane({ noteId, startInEditMode, onNoteChanged }: Props) {
 
         <div className="editor-body">
           {isPreview ? (
-            <div className="preview markdown-body" onDoubleClick={editAtClick}>
+            <div className="preview markdown-body" onClick={editAtClick}>
               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize, rehypeSourceOffsets]}>
                 {body || "_Nothing written yet._"}
               </ReactMarkdown>

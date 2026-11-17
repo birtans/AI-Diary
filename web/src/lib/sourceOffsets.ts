@@ -22,7 +22,7 @@ function stamp(node: Nodes) {
 }
 
 /**
- * Maps a double-click in the rendered preview back to a range in the markdown
+ * Maps a triple-click in the rendered preview back to a range in the markdown
  * source. Uses the innermost stamped element as the window, then finds the word
  * the browser selected, counting earlier occurrences so a repeated word lands
  * on the right one. Falls back to the start of the element.
